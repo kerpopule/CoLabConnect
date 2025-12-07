@@ -219,3 +219,29 @@ export async function notifyFollowedChat(
 
   await Promise.all(sendPromises);
 }
+
+// Send notification for an emoji reaction on a message
+export async function notifyReaction(
+  receiverId: string,
+  senderId: string,
+  senderName: string,
+  emoji: string
+): Promise<void> {
+  // Don't notify yourself
+  if (receiverId === senderId) return;
+
+  await sendPushNotification(receiverId, {
+    title: `${senderName} reacted ${emoji}`,
+    body: "Tap to view the message",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `reaction-${senderId}-${Date.now()}`,
+    requireInteraction: false,
+    data: {
+      type: "dm",
+      senderId,
+      senderName,
+      url: `/chat?dm=${senderId}`,
+    },
+  });
+}

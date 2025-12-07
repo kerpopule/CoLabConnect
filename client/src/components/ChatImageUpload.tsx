@@ -220,24 +220,24 @@ export function ChatImageUpload({ onImageUploaded, disabled }: ChatImageUploadPr
   );
 }
 
-// Display image in message content
+// Display image in message content - responsive sizing based on device
 export function ChatImage({ src, alt }: { src: string; alt?: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
   if (hasError) {
     return (
-      <div className="w-full max-w-xs h-32 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm">
+      <div className="w-full h-24 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-xs">
         Image unavailable
       </div>
     );
   }
 
   return (
-    <div className="relative mt-2">
+    <div className="relative">
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted rounded-lg">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <div className="w-full h-32 flex items-center justify-center bg-muted/50 rounded-lg">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       )}
       <a
@@ -249,9 +249,10 @@ export function ChatImage({ src, alt }: { src: string; alt?: string }) {
         <img
           src={src}
           alt={alt || "Shared image"}
-          className={`max-w-xs max-h-64 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity ${
-            isLoading ? "opacity-0" : "opacity-100"
+          className={`w-full max-w-[200px] sm:max-w-[280px] md:max-w-[320px] rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity ${
+            isLoading ? "hidden" : "block"
           }`}
+          style={{ maxHeight: "200px" }}
           onLoad={() => setIsLoading(false)}
           onError={() => {
             setIsLoading(false);

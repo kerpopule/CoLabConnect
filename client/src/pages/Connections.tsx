@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,6 +120,47 @@ export default function Connections() {
     enabled: !!user,
   });
 
+  // Real-time subscription for connection changes
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`connections:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "connections",
+          filter: `follower_id=eq.${user.id}`,
+        },
+        () => {
+          // Refetch connections on any change
+          queryClient.invalidateQueries({ queryKey: ["connections"] });
+          queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "connections",
+          filter: `following_id=eq.${user.id}`,
+        },
+        () => {
+          // Refetch connections on any change
+          queryClient.invalidateQueries({ queryKey: ["connections"] });
+          queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient]);
+
   // Accept connection request
   const acceptRequest = useMutation({
     mutationFn: async (connectionId: string) => {
@@ -209,19 +250,41 @@ export default function Connections() {
         .eq("id", connectionId);
 
       if (error) throw error;
+      return connectionId;
+    },
+    onMutate: async (connectionId: string) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["connections", "accepted", user?.id] });
+
+      // Snapshot the previous value
+      const previousConnections = queryClient.getQueryData(["connections", "accepted", user?.id]);
+
+      // Optimistically remove from the list immediately
+      queryClient.setQueryData(
+        ["connections", "accepted", user?.id],
+        (old: any) => old?.filter((c: any) => c.id !== connectionId) || []
+      );
+
+      // Close the dialog and reset swipe state immediately
+      setConnectionToRemove(null);
+      setSwipedConnection(null);
+
+      return { previousConnections };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["connections"] });
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       queryClient.invalidateQueries({ queryKey: ["private-chats"] });
-      setConnectionToRemove(null);
-      setSwipedConnection(null);
       toast({
         title: "Connection removed",
         description: "You are no longer connected.",
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, _connectionId, context) => {
+      // Rollback on error
+      if (context?.previousConnections) {
+        queryClient.setQueryData(["connections", "accepted", user?.id], context.previousConnections);
+      }
       toast({
         variant: "destructive",
         title: "Failed to remove connection",

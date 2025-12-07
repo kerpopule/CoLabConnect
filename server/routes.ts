@@ -602,6 +602,25 @@ export async function registerRoutes(
     }
   });
 
+  // Trigger notification for emoji reaction
+  app.post("/api/notify/reaction", async (req, res) => {
+    try {
+      const { receiverId, senderId, senderName, emoji } = req.body;
+
+      if (!receiverId || !senderId || !senderName || !emoji) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Import and use the notification function
+      const { notifyReaction } = await import("./pushNotifications");
+      await notifyReaction(receiverId, senderId, senderName, emoji);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Reaction notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Trigger notification for new chat message in followed topic
   app.post("/api/notify/chat", async (req, res) => {
     try {

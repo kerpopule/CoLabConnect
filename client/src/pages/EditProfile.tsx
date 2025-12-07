@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Save, ArrowLeft, Camera, Trash2, Phone, Mail, Eye, EyeOff } from "lucide-react";
+import { Loader2, Save, Camera, Trash2, Phone, Mail, Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
@@ -466,29 +466,15 @@ export default function EditProfile() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-full min-h-[44px] min-w-[44px]"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setLocation("/my-profile");
-          }}
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-display font-bold text-foreground">
-            {isNewUser ? "Complete Your Profile" : "Edit Profile"}
-          </h1>
-          <p className="text-muted-foreground">
-            {isNewUser
-              ? "Tell the Co:Lab community about yourself"
-              : "Update your Co:Lab profile"}
-          </p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-display font-bold text-foreground">
+          {isNewUser ? "Complete Your Profile" : "Edit Profile"}
+        </h1>
+        <p className="text-muted-foreground">
+          {isNewUser
+            ? "Tell the Co:Lab community about yourself"
+            : "Update your Co:Lab profile"}
+        </p>
       </div>
 
       {isNewUser && (

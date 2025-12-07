@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -99,16 +99,62 @@ export default function Directory() {
   const getConnectionStatus = (profileId: string): "none" | "pending" | "connected" => {
     if (!user || !myConnections) return "none";
 
-    const connection = myConnections.find(
+    // Find all connections with this user (there might be duplicates from bugs)
+    const connections = myConnections.filter(
       (c) =>
         (c.follower_id === user.id && c.following_id === profileId) ||
         (c.following_id === user.id && c.follower_id === profileId)
     );
 
-    if (!connection) return "none";
-    if (connection.status === "accepted") return "connected";
-    return "pending";
+    if (connections.length === 0) return "none";
+
+    // If ANY connection is accepted, show as connected (handles duplicates)
+    if (connections.some(c => c.status === "accepted")) return "connected";
+
+    // Otherwise if any is pending, show pending
+    if (connections.some(c => c.status === "pending")) return "pending";
+
+    return "none";
   };
+
+  // Real-time subscription for connection changes
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`directory-connections:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "connections",
+          filter: `follower_id=eq.${user.id}`,
+        },
+        () => {
+          // Refetch connections on any change
+          queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "connections",
+          filter: `following_id=eq.${user.id}`,
+        },
+        () => {
+          // Refetch connections on any change
+          queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient]);
 
   // Use mock data if no profiles exist yet
   const displayProfiles = profiles && profiles.length > 0 ? profiles : MOCK_USERS;

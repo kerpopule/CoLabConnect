@@ -7,7 +7,7 @@ import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import {
   DropdownMenu,
@@ -23,6 +23,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [isDark, setIsDark] = useState(false);
   const { user, profile, signOut, loading } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Fetch pending connection requests count
   const { data: pendingRequestsCount = 0 } = useQuery({
@@ -61,6 +62,52 @@ export function Layout({ children }: { children: React.ReactNode }) {
     enabled: !!user,
     refetchInterval: 15000, // Refresh every 15 seconds
   });
+
+  // Real-time subscription for badge counts
+  useEffect(() => {
+    if (!user) return;
+
+    // Subscribe to connection changes for pending requests badge
+    const connectionsChannel = supabase
+      .channel(`layout-connections:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "connections",
+          filter: `following_id=eq.${user.id}`,
+        },
+        () => {
+          // Refetch pending requests count on any change
+          queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to private message changes for unread badge
+    const messagesChannel = supabase
+      .channel(`layout-messages:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "private_messages",
+          filter: `receiver_id=eq.${user.id}`,
+        },
+        () => {
+          // Refetch unread messages count on any change
+          queryClient.invalidateQueries({ queryKey: ["unread-messages-count"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(connectionsChannel);
+      supabase.removeChannel(messagesChannel);
+    };
+  }, [user, queryClient]);
 
   useEffect(() => {
     // Check system preference initially

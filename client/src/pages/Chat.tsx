@@ -1108,40 +1108,6 @@ export default function Chat() {
             </div>
           </div>
 
-          {/* Follow/Notify Button - only show for public topics when logged in */}
-          {chatMode === "public" && user && activeTopic && (
-            <button
-              onClick={() => {
-                // If notifications aren't enabled, show the prompt first
-                if (!hasNotificationsEnabled) {
-                  setShowTopicPrompt(true);
-                } else {
-                  toggleFollow();
-                }
-              }}
-              disabled={followLoading}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
-                isFollowingTopic
-                  ? "bg-primary/10 text-primary border border-primary/30"
-                  : "bg-muted text-muted-foreground border border-border hover:bg-muted/80"
-              }`}
-              title={isFollowingTopic ? "Stop notifications for this channel" : "Get notified of new messages"}
-            >
-              {followLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : isFollowingTopic ? (
-                <Bell className="h-4 w-4" />
-              ) : (
-                <BellOff className="h-4 w-4" />
-              )}
-              <span className="hidden sm:inline">{isFollowingTopic ? "Following" : "Notify"}</span>
-            </button>
-          )}
-
-          {/* DM Notification Button - only show for private chats when notifications not enabled */}
-          {chatMode === "private" && user && activeDm && !hasNotificationsEnabled && (
-            <NotificationEnableButton type="dm" />
-          )}
 
           {/* AI Button - right side (only show when not in AI mode) */}
           {chatMode !== "ai" && (
@@ -1358,6 +1324,7 @@ export default function Chat() {
                           <EmojiReactions
                             messageId={msg.id}
                             messageType={isPrivateChat ? "private" : "public"}
+                            messageSenderId={isPrivateChat ? msg.sender_id : msg.user_id}
                           />
                         )}
                         {/* Desktop hover actions - only for own non-deleted messages */}

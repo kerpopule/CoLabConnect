@@ -30,14 +30,15 @@ interface ReactionCount {
 interface EmojiReactionsProps {
   messageId: string;
   messageType: "public" | "private";
+  messageSenderId?: string; // The user who sent the message (for notifications)
   onReactionChange?: () => void;
 }
 
 // Cache for reactions to reduce database calls
 const reactionsCache = new Map<string, Reaction[]>();
 
-export function EmojiReactions({ messageId, messageType, onReactionChange }: EmojiReactionsProps) {
-  const { user } = useAuth();
+export function EmojiReactions({ messageId, messageType, messageSenderId, onReactionChange }: EmojiReactionsProps) {
+  const { user, profile: currentUserProfile } = useAuth();
   const queryClient = useQueryClient();
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -171,6 +172,21 @@ export function EmojiReactions({ messageId, messageType, onReactionChange }: Emo
         const newReactions = [...reactions, data];
         reactionsCache.set(cacheKey, newReactions);
         setReactions(newReactions);
+
+        // Send push notification to the message sender (not to self)
+        if (messageSenderId && messageSenderId !== user.id && currentUserProfile) {
+          fetch("/api/notify/reaction", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              receiverId: messageSenderId,
+              senderId: user.id,
+              senderName: currentUserProfile.name,
+              emoji,
+              messageType,
+            }),
+          }).catch(console.error);
+        }
       }
 
       onReactionChange?.();
