@@ -122,8 +122,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/chat", icon: MessageCircle, label: "Chat", badge: unreadMessagesCount },
   ];
 
+  // Chat page needs fixed height to prevent outer scroll
+  const isChatPage = location === "/chat";
+
   return (
-    <div className="min-h-screen bg-background flex flex-col pb-20 md:pb-0 font-sans">
+    <div className={`bg-background flex flex-col pb-20 md:pb-0 font-sans ${isChatPage ? "h-screen overflow-hidden" : "min-h-screen"}`}>
       {/* Mobile Top Bar - only show on profile page */}
       {(location === "/my-profile" || location === "/profile/edit") && (
         <header className="md:hidden flex justify-end items-center p-4 fixed top-0 left-0 right-0 z-50">
@@ -243,7 +246,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
-      <main className="flex-1 md:pl-64 p-4 md:p-8 max-w-5xl mx-auto w-full animate-in fade-in duration-500">
+      <main className={`flex-1 md:pl-64 p-4 md:p-8 max-w-5xl mx-auto w-full animate-in fade-in duration-500 ${isChatPage ? "overflow-hidden flex flex-col" : ""}`}>
         {children}
       </main>
 

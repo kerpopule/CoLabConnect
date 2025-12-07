@@ -468,10 +468,17 @@ export default function Chat() {
     const content = input.trim();
     setInput("");
 
-    // Keep focus on input so keyboard stays open
+    // Keep focus on input so keyboard stays open - multiple attempts for reliability
+    // Immediate focus
+    inputRef.current?.focus();
+    // Delayed focus as fallback (helps on mobile)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+    // Additional delayed focus for iOS Safari
     setTimeout(() => {
       inputRef.current?.focus();
-    }, 0);
+    }, 50);
 
     if (chatMode === "ai") {
       await sendAiMessage(content);
@@ -612,7 +619,7 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-112px)] md:h-[calc(100vh-100px)] rounded-3xl overflow-hidden border border-border bg-card shadow-sm">
+    <div className="flex flex-col flex-1 min-h-0 rounded-3xl overflow-hidden border border-border bg-card shadow-sm">
       {/* Topics Header / Scroll */}
       <div className="bg-muted/30 border-b border-border p-3 shrink-0">
         <div className="flex items-center gap-2">
