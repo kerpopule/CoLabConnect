@@ -11,7 +11,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import ReactMarkdown from "react-markdown";
 import { useTopicFollow, usePushNotifications } from "@/hooks/usePushNotifications";
 import { NotificationEnableButton, NotificationPrompt, useDmNotificationPrompt } from "@/components/NotificationPrompt";
-import { MessageContextMenu, DeletedMessage, EditedIndicator } from "@/components/MessageContextMenu";
+import { MessageWrapper, DeletedMessage, EditedIndicator, MessageActions } from "@/components/MessageContextMenu";
 
 type AIMessage = {
   id: string;
@@ -629,16 +629,33 @@ export default function Chat() {
 
   // Edit public message
   const handleEditMessage = async (messageId: string, newContent: string) => {
-    const { error } = await supabase
+    // Try with edited_at first, fall back to just content if column doesn't exist
+    let error;
+    const result = await supabase
       .from("messages")
       .update({
         content: newContent,
         edited_at: new Date().toISOString(),
       })
       .eq("id", messageId)
-      .eq("user_id", user?.id); // Only allow editing own messages
+      .eq("user_id", user?.id);
 
-    if (error) throw error;
+    error = result.error;
+
+    // If edited_at column doesn't exist, try without it
+    if (error && error.message?.includes("edited_at")) {
+      const fallbackResult = await supabase
+        .from("messages")
+        .update({ content: newContent })
+        .eq("id", messageId)
+        .eq("user_id", user?.id);
+      error = fallbackResult.error;
+    }
+
+    if (error) {
+      console.error("Edit message error:", error);
+      throw error;
+    }
 
     // Update local cache
     if (activeTopic) {
@@ -655,16 +672,33 @@ export default function Chat() {
 
   // Delete public message (soft delete)
   const handleDeleteMessage = async (messageId: string) => {
-    const { error } = await supabase
+    // Try with deleted_at first, fall back to just clearing content if column doesn't exist
+    let error;
+    const result = await supabase
       .from("messages")
       .update({
         deleted_at: new Date().toISOString(),
-        content: "", // Clear content on delete
+        content: "",
       })
       .eq("id", messageId)
-      .eq("user_id", user?.id); // Only allow deleting own messages
+      .eq("user_id", user?.id);
 
-    if (error) throw error;
+    error = result.error;
+
+    // If deleted_at column doesn't exist, try with just content
+    if (error && error.message?.includes("deleted_at")) {
+      const fallbackResult = await supabase
+        .from("messages")
+        .update({ content: "[Message deleted]" })
+        .eq("id", messageId)
+        .eq("user_id", user?.id);
+      error = fallbackResult.error;
+    }
+
+    if (error) {
+      console.error("Delete message error:", error);
+      throw error;
+    }
 
     // Update local cache
     if (activeTopic) {
@@ -681,16 +715,33 @@ export default function Chat() {
 
   // Edit private message
   const handleEditPrivateMessage = async (messageId: string, newContent: string) => {
-    const { error } = await supabase
+    // Try with edited_at first, fall back to just content if column doesn't exist
+    let error;
+    const result = await supabase
       .from("private_messages")
       .update({
         content: newContent,
         edited_at: new Date().toISOString(),
       })
       .eq("id", messageId)
-      .eq("sender_id", user?.id); // Only allow editing own messages
+      .eq("sender_id", user?.id);
 
-    if (error) throw error;
+    error = result.error;
+
+    // If edited_at column doesn't exist, try without it
+    if (error && error.message?.includes("edited_at")) {
+      const fallbackResult = await supabase
+        .from("private_messages")
+        .update({ content: newContent })
+        .eq("id", messageId)
+        .eq("sender_id", user?.id);
+      error = fallbackResult.error;
+    }
+
+    if (error) {
+      console.error("Edit private message error:", error);
+      throw error;
+    }
 
     // Update local cache
     if (user && activeDm) {
@@ -707,16 +758,33 @@ export default function Chat() {
 
   // Delete private message (soft delete)
   const handleDeletePrivateMessage = async (messageId: string) => {
-    const { error } = await supabase
+    // Try with deleted_at first, fall back to just clearing content if column doesn't exist
+    let error;
+    const result = await supabase
       .from("private_messages")
       .update({
         deleted_at: new Date().toISOString(),
-        content: "", // Clear content on delete
+        content: "",
       })
       .eq("id", messageId)
-      .eq("sender_id", user?.id); // Only allow deleting own messages
+      .eq("sender_id", user?.id);
 
-    if (error) throw error;
+    error = result.error;
+
+    // If deleted_at column doesn't exist, try with just content
+    if (error && error.message?.includes("deleted_at")) {
+      const fallbackResult = await supabase
+        .from("private_messages")
+        .update({ content: "[Message deleted]" })
+        .eq("id", messageId)
+        .eq("sender_id", user?.id);
+      error = fallbackResult.error;
+    }
+
+    if (error) {
+      console.error("Delete private message error:", error);
+      throw error;
+    }
 
     // Update local cache
     if (user && activeDm) {
@@ -1220,73 +1288,74 @@ export default function Chat() {
                 const isDeleted = !!msg.deleted_at;
                 const isEdited = !!msg.edited_at && !isDeleted;
 
-                const messageContent = (
-                  <div
+                return (
+                  <MessageWrapper
                     key={msg.id}
-                    className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}
+                    messageId={msg.id}
+                    content={msg.content}
+                    isOwnMessage={isOwn}
+                    isDeleted={isDeleted}
+                    onEdit={isPrivateChat ? handleEditPrivateMessage : handleEditMessage}
+                    onDelete={isPrivateChat ? handleDeletePrivateMessage : handleDeleteMessage}
                   >
-                    <Avatar className="w-8 h-8 shrink-0">
-                      <AvatarImage
-                        src={senderProfile?.avatar_url || undefined}
-                        alt={senderName}
-                      />
-                      <AvatarFallback
-                        className={`text-xs font-bold ${
-                          isOwn
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-secondary text-secondary-foreground"
-                        }`}
-                      >
-                        {getInitials(senderName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="max-w-[75%] space-y-1">
-                      <div
-                        className={`flex items-baseline gap-2 ${
-                          isOwn ? "justify-end" : ""
-                        }`}
-                      >
-                        <span className="text-xs font-bold text-foreground">
-                          {isOwn ? "You" : senderName}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {formatTime(msg.created_at)}
-                        </span>
-                        {isEdited && <EditedIndicator />}
-                      </div>
-                      <div
-                        className={`p-3 rounded-2xl text-sm ${
-                          isDeleted
-                            ? "bg-muted/50 text-muted-foreground border border-border/50 italic"
-                            : isOwn
-                            ? "bg-primary/10 text-foreground rounded-tr-none border border-primary/20"
-                            : "bg-muted text-foreground rounded-tl-none border border-border"
-                        }`}
-                      >
-                        {isDeleted ? <DeletedMessage /> : msg.content}
+                    <div className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}>
+                      <Avatar className="w-8 h-8 shrink-0">
+                        <AvatarImage
+                          src={senderProfile?.avatar_url || undefined}
+                          alt={senderName}
+                        />
+                        <AvatarFallback
+                          className={`text-xs font-bold ${
+                            isOwn
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-secondary text-secondary-foreground"
+                          }`}
+                        >
+                          {getInitials(senderName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="max-w-[75%] space-y-1">
+                        <div
+                          className={`flex items-baseline gap-2 ${
+                            isOwn ? "justify-end" : ""
+                          }`}
+                        >
+                          <span className="text-xs font-bold text-foreground">
+                            {isOwn ? "You" : senderName}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatTime(msg.created_at)}
+                          </span>
+                          {isEdited && <EditedIndicator />}
+                        </div>
+                        <div
+                          className={`p-3 rounded-2xl text-sm ${
+                            isDeleted
+                              ? "bg-muted/50 text-muted-foreground border border-border/50 italic"
+                              : isOwn
+                              ? "bg-primary/10 text-foreground rounded-tr-none border border-primary/20"
+                              : "bg-muted text-foreground rounded-tl-none border border-border"
+                          }`}
+                        >
+                          {isDeleted ? <DeletedMessage /> : msg.content}
+                        </div>
+                        {/* Desktop hover actions - only for own non-deleted messages */}
+                        {isOwn && !isDeleted && (
+                          <div className="hidden md:block">
+                            <MessageActions
+                              messageId={msg.id}
+                              content={msg.content}
+                              isOwnMessage={isOwn}
+                              isDeleted={isDeleted}
+                              onEdit={isPrivateChat ? handleEditPrivateMessage : handleEditMessage}
+                              onDelete={isPrivateChat ? handleDeletePrivateMessage : handleDeleteMessage}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
+                  </MessageWrapper>
                 );
-
-                // Wrap own messages in context menu (for edit/delete)
-                if (isOwn && !isDeleted) {
-                  return (
-                    <MessageContextMenu
-                      key={msg.id}
-                      messageId={msg.id}
-                      content={msg.content}
-                      isOwnMessage={isOwn}
-                      isDeleted={isDeleted}
-                      onEdit={isPrivateChat ? handleEditPrivateMessage : handleEditMessage}
-                      onDelete={isPrivateChat ? handleDeletePrivateMessage : handleDeleteMessage}
-                    >
-                      {messageContent}
-                    </MessageContextMenu>
-                  );
-                }
-
-                return messageContent;
               })
             ) : (
               <div className="text-center py-8 text-muted-foreground">

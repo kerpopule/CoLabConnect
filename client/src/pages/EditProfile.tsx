@@ -448,6 +448,7 @@ export default function EditProfile() {
     }
   };
 
+  // Show loading while auth is loading or user is not available
   if (authLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -456,8 +457,8 @@ export default function EditProfile() {
     );
   }
 
-  // Check if this is a new user (profile incomplete)
-  const isNewUser = !profile?.role && !profile?.bio && (!profile?.tags || profile.tags.length === 0);
+  // Check if this is a new user (profile incomplete) - safely handle null profile
+  const isNewUser = !profile || (!profile.role && !profile.bio && (!profile.tags || profile.tags.length === 0));
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
