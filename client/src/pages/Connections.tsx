@@ -115,7 +115,16 @@ export default function Connections() {
         })),
       ];
 
-      return allConnections;
+      // Deduplicate by otherProfile.id (keep the first occurrence)
+      const seenIds = new Set<string>();
+      const uniqueConnections = allConnections.filter((c) => {
+        if (!c.otherProfile?.id) return false;
+        if (seenIds.has(c.otherProfile.id)) return false;
+        seenIds.add(c.otherProfile.id);
+        return true;
+      });
+
+      return uniqueConnections;
     },
     enabled: !!user,
   });

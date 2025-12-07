@@ -166,10 +166,12 @@ export default function Chat() {
         .eq("status", "accepted");
 
       const chats: PrivateChat[] = [];
+      const seenIds = new Set<string>();
 
       if (sentConnections) {
         sentConnections.forEach((c: any) => {
-          if (c.following_profile) {
+          if (c.following_profile && !seenIds.has(c.following_id)) {
+            seenIds.add(c.following_id);
             chats.push({
               otherId: c.following_id,
               profile: c.following_profile,
@@ -180,7 +182,8 @@ export default function Chat() {
 
       if (receivedConnections) {
         receivedConnections.forEach((c: any) => {
-          if (c.follower_profile) {
+          if (c.follower_profile && !seenIds.has(c.follower_id)) {
+            seenIds.add(c.follower_id);
             chats.push({
               otherId: c.follower_id,
               profile: c.follower_profile,
@@ -900,7 +903,9 @@ export default function Chat() {
   const isPrivateChat = !!activeDm && chatMode !== "ai";
   const isAiChat = chatMode === "ai";
   const isLoadingMessages = isAiChat ? false : isPrivateChat ? privateMessagesLoading : messagesLoading;
-  const displayMessages = isAiChat ? aiMessages : isPrivateChat ? privateMessages : messages;
+  // Filter out deleted messages - they should completely disappear
+  const rawMessages = isAiChat ? aiMessages : isPrivateChat ? privateMessages : messages;
+  const displayMessages = rawMessages?.filter((msg: any) => !msg.deleted_at) || [];
   const isPending = isAiChat ? aiPending : isPrivateChat ? sendPrivateMessage.isPending : sendMessage.isPending;
 
   // Require login to access chat
