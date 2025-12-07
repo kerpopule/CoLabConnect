@@ -1,4 +1,5 @@
 import { Switch, Route } from "wouter";
+import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -6,6 +7,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/Layout";
 import { AuthProvider } from "@/contexts/AuthContext";
+
+// Load text size preference on app startup
+const TEXT_SIZE_KEY = "colab_large_text";
+if (localStorage.getItem(TEXT_SIZE_KEY) === "true") {
+  document.documentElement.classList.add("large-text");
+}
 
 import Home from "@/pages/Home";
 import Directory from "@/pages/Directory";

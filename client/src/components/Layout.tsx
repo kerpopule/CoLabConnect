@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Home, Users, MessageCircle, Moon, Sun, LogOut, UserCog, UserCheck, User } from "lucide-react";
+import { Users, MessageCircle, Moon, Sun, LogOut, UserCog, UserCheck, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { QRCodeButton } from "./QRCodeButton";
@@ -154,9 +154,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Desktop nav items (includes Home)
+  // Desktop nav items (Profile instead of Home)
   const desktopNavItems = [
-    { href: "/", icon: Home, label: "Home", badge: 0 },
+    { href: user ? "/my-profile" : "/login", icon: User, label: "Profile", badge: 0 },
     { href: "/directory", icon: Users, label: "Directory", badge: 0 },
     { href: "/connections", icon: UserCheck, label: "Connections", badge: pendingRequestsCount },
     { href: "/chat", icon: MessageCircle, label: "Chat", badge: unreadMessagesCount },
@@ -202,7 +202,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [location, user]);
 
   return (
-    <div className={`bg-background flex flex-col pb-20 md:pb-0 font-sans ${isChatPage ? "h-dvh overflow-hidden fixed inset-0 md:relative md:h-screen" : "min-h-screen"}`}>
+    <div className={`bg-background flex flex-col pb-24 md:pb-0 font-sans ${isChatPage ? "h-dvh overflow-hidden fixed inset-0 md:relative md:h-screen" : "min-h-screen"}`}>
       {/* Mobile Top Bar - only show on profile page */}
       {(location === "/my-profile" || location === "/profile/edit") && (
         <header className="md:hidden flex justify-end items-center p-4 fixed top-0 left-0 right-0 z-50">
@@ -265,22 +265,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Mobile Navigation */}
-        <ul className="flex justify-around items-center h-16 md:hidden">
+        <ul className="flex justify-around items-center h-20 md:hidden">
           {mobileNavItems.map((item) => {
             const isActive = location === item.href || (item.href === "/my-profile" && location.startsWith("/my-profile"));
             return (
               <li key={item.href} className="flex-1">
                 <Link href={item.href}>
-                  <div className={`relative flex flex-col items-center justify-center rounded-xl transition-all duration-200 cursor-pointer ${isActive ? "text-primary font-medium bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}>
+                  <div className={`relative flex flex-col items-center justify-center py-2 rounded-xl transition-all duration-200 cursor-pointer ${isActive ? "text-primary font-medium bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}>
                     <div className="relative">
-                      <item.icon className={`h-6 w-6 ${isActive ? "stroke-[2.5px]" : "stroke-2"}`} />
+                      <item.icon className={`h-7 w-7 ${isActive ? "stroke-[2.5px]" : "stroke-2"}`} />
                       {item.badge > 0 && (
                         <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1">
                           {item.badge > 9 ? "9+" : item.badge}
                         </span>
                       )}
                     </div>
-                    <span className="text-[10px] mt-1">{item.label}</span>
+                    <span className="text-xs mt-1.5">{item.label}</span>
                   </div>
                 </Link>
               </li>

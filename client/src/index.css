@@ -216,3 +216,38 @@ label {
     left: 0;
   }
 }
+
+/* Large text mode - increases font sizes throughout the app */
+html.large-text {
+  font-size: 18px;
+}
+
+html.large-text body {
+  font-size: 1.125rem;
+  line-height: 1.6;
+}
+
+html.large-text h1 {
+  font-size: 2rem;
+}
+
+html.large-text h2 {
+  font-size: 1.75rem;
+}
+
+html.large-text h3 {
+  font-size: 1.5rem;
+}
+
+html.large-text p,
+html.large-text span,
+html.large-text div {
+  line-height: 1.6;
+}
+
+/* Increase minimum touch target size in large text mode */
+html.large-text button,
+html.large-text [role="button"],
+html.large-text a {
+  min-height: 48px;
+}

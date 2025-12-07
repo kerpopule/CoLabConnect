@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,17 +12,44 @@ import {
   LogOut,
   UserCog,
   Phone,
+  Type,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { SocialLinksDisplay } from "@/components/SocialLinksEditor";
 import { migrateOldSocialLinks } from "@/lib/utils";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { Switch } from "@/components/ui/switch";
+
+// Text size preference key
+const TEXT_SIZE_KEY = "colab_large_text";
 
 export default function MyProfile() {
   const [, setLocation] = useLocation();
   const { user, profile, signOut, loading } = useAuth();
   const { toast } = useToast();
+  const [largeText, setLargeText] = useState(() => {
+    return localStorage.getItem(TEXT_SIZE_KEY) === "true";
+  });
+
+  // Apply text size preference to document
+  useEffect(() => {
+    if (largeText) {
+      document.documentElement.classList.add("large-text");
+    } else {
+      document.documentElement.classList.remove("large-text");
+    }
+  }, [largeText]);
+
+  const toggleTextSize = () => {
+    const newValue = !largeText;
+    setLargeText(newValue);
+    localStorage.setItem(TEXT_SIZE_KEY, String(newValue));
+    toast({
+      title: newValue ? "Larger text enabled" : "Standard text enabled",
+      description: "Your preference has been saved.",
+    });
+  };
 
   // Redirect if not logged in
   useEffect(() => {
@@ -201,6 +228,26 @@ export default function MyProfile() {
 
       {/* Notification Settings */}
       <NotificationSettings />
+
+      {/* Display Settings */}
+      <Card className="border-border/50 shadow-lg">
+        <CardContent className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Display Settings</h3>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Type className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Larger Text</p>
+                <p className="text-sm text-muted-foreground">Increase text size throughout the app</p>
+              </div>
+            </div>
+            <Switch
+              checked={largeText}
+              onCheckedChange={toggleTextSize}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Sign Out Button */}
       <Button
