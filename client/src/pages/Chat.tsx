@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Hash, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft } from "lucide-react";
+import { Send, Hash, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Topic, Message, Profile, PrivateMessage, getPrivateChatId } from "@/lib/supabase";
@@ -66,6 +66,8 @@ export default function Chat() {
   const { user, profile: currentUserProfile, loading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Topic follow for notifications
   const { isFollowing: isFollowingTopic, isLoading: followLoading, toggleFollow } = useTopicFollow(activeTopic);
@@ -320,9 +322,10 @@ export default function Chat() {
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    // Use setTimeout to ensure DOM has updated
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   }, [messages, privateMessages, aiMessages]);
 
   // Send AI message
@@ -420,6 +423,11 @@ export default function Chat() {
     const content = input.trim();
     setInput("");
 
+    // Keep focus on input so keyboard stays open
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
     if (chatMode === "ai") {
       await sendAiMessage(content);
     } else if (activeDm) {
@@ -477,6 +485,17 @@ export default function Chat() {
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffMins < 1440) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+
+  const clearAiChat = () => {
+    const welcomeMessage: AIMessage = {
+      id: "welcome",
+      role: "ai",
+      content: "Hi! I'm your Co:Lab AI Guide. Ask me anything like 'Who works in fintech?' or 'How do I connect with investors?'",
+      created_at: new Date().toISOString(),
+    };
+    setAiMessages([welcomeMessage]);
+    localStorage.setItem("colab-ai-messages", JSON.stringify([welcomeMessage]));
   };
 
   const currentTopic = displayTopics.find((t) => t.id === activeTopic);
@@ -548,7 +567,7 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] md:h-[calc(100vh-100px)] rounded-3xl overflow-hidden border border-border bg-card shadow-sm">
+    <div className="flex flex-col h-[calc(100vh-112px)] md:h-[calc(100vh-100px)] rounded-3xl overflow-hidden border border-border bg-card shadow-sm">
       {/* Topics Header / Scroll */}
       <div className="bg-muted/30 border-b border-border p-3">
         <div className="flex items-center gap-2">
@@ -616,13 +635,25 @@ export default function Chat() {
           >
             <div className="flex gap-2 min-w-max">
               {chatMode === "ai" ? (
-                /* AI Chat - show single active tab */
-                <button
-                  className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap bg-gradient-to-r from-primary to-accent text-white shadow-md"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  AI Assistant
-                </button>
+                /* AI Chat - show single active tab with clear button */
+                <>
+                  <button
+                    className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap bg-gradient-to-r from-primary to-accent text-white shadow-md"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    AI Assistant
+                  </button>
+                  {aiMessages.length > 1 && (
+                    <button
+                      onClick={clearAiChat}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/20"
+                      title="Clear AI chat history"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="hidden sm:inline">Clear</span>
+                    </button>
+                  )}
+                </>
               ) : chatMode === "public" ? (
                 /* Public topics */
                 displayTopics.map((topic) => (
@@ -906,6 +937,8 @@ export default function Chat() {
                 </p>
               </div>
             )}
+            {/* Scroll anchor for auto-scroll to bottom */}
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
 
@@ -921,6 +954,7 @@ export default function Chat() {
               {isAiChat ? <Sparkles className="h-5 w-5" /> : isPrivateChat ? <Lock className="h-5 w-5" /> : <Hash className="h-5 w-5" />}
             </Button>
             <Input
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={

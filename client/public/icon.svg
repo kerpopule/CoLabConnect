@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Teal background -->
+  <rect width="512" height="512" fill="#14b8a6"/>
+
+  <!-- Connected people/heart symbol in white -->
+  <g transform="translate(256, 230)" fill="none" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top person (teal figure) -->
+    <circle cx="0" cy="-95" r="32" fill="white" stroke="none"/>
+    <path d="M-45,-55 Q-60,-10 -30,30 Q0,70 30,30 Q60,-10 45,-55" stroke="white" fill="none"/>
+
+    <!-- Left person (blue figure) -->
+    <g transform="rotate(-120)">
+      <circle cx="0" cy="-95" r="32" fill="white" stroke="none"/>
+      <path d="M-45,-55 Q-60,-10 -30,30 Q0,70 30,30 Q60,-10 45,-55" stroke="white" fill="none"/>
+    </g>
+
+    <!-- Right person (orange figure) -->
+    <g transform="rotate(120)">
+      <circle cx="0" cy="-95" r="32" fill="white" stroke="none"/>
+      <path d="M-45,-55 Q-60,-10 -30,30 Q0,70 30,30 Q60,-10 45,-55" stroke="white" fill="none"/>
+    </g>
+  </g>
+</svg>
