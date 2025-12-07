@@ -13,14 +13,16 @@ CREATE INDEX IF NOT EXISTS idx_messages_deleted_at ON messages(deleted_at) WHERE
 CREATE INDEX IF NOT EXISTS idx_private_messages_deleted_at ON private_messages(deleted_at) WHERE deleted_at IS NOT NULL;
 
 -- Add RLS policies to allow users to update their own messages
--- (They can only update content, edited_at, and deleted_at fields)
+-- Drop existing policies if they exist, then recreate
 
 -- Policy for messages table - allow update of own messages
-CREATE POLICY IF NOT EXISTS "Users can update own messages" ON messages
+DROP POLICY IF EXISTS "Users can update own messages" ON messages;
+CREATE POLICY "Users can update own messages" ON messages
 FOR UPDATE USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
 -- Policy for private_messages table - allow update of own messages
-CREATE POLICY IF NOT EXISTS "Users can update own private messages" ON private_messages
+DROP POLICY IF EXISTS "Users can update own private messages" ON private_messages;
+CREATE POLICY "Users can update own private messages" ON private_messages
 FOR UPDATE USING (auth.uid() = sender_id)
 WITH CHECK (auth.uid() = sender_id);
