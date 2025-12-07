@@ -21,22 +21,11 @@ async function generateIcons() {
 
   console.log(`Source image: ${metadata.width}x${metadata.height}`);
 
-  // Crop out just the black border and white corners (minimal crop)
-  // Then use 'contain' with white background to fit all content
-  const borderCrop = Math.floor(metadata.width * 0.04); // Just the border
-
-  const extractOptions = {
-    left: borderCrop,
-    top: borderCrop,
-    width: metadata.width - (borderCrop * 2),
-    height: metadata.height - (borderCrop * 2)
-  };
-
-  console.log(`Cropping: ${borderCrop}px border from each edge`);
+  // Source is already cropped, just resize with white background
+  console.log(`Using pre-cropped source image`);
 
   for (const { name, size } of sizes) {
     await sharp(sourceIcon)
-      .extract(extractOptions)
       .resize(size, size, {
         fit: 'contain',
         background: { r: 255, g: 255, b: 255, alpha: 1 }
