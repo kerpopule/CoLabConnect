@@ -602,13 +602,18 @@ export default function EditProfile() {
               </p>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  className="flex items-center justify-between w-full p-3 -m-3 rounded-xl hover:bg-muted/50 transition-colors"
+                  onClick={() => !isLoading && setShowEmail(!showEmail)}
+                  disabled={isLoading}
+                >
                   <div className="flex items-center gap-3">
                     <Mail className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <Label htmlFor="show-email" className="text-sm font-medium cursor-pointer">
+                    <div className="text-left">
+                      <span className="text-sm font-medium">
                         Show Email Address
-                      </Label>
+                      </span>
                       <p className="text-xs text-muted-foreground">
                         {user?.email}
                       </p>
@@ -619,16 +624,22 @@ export default function EditProfile() {
                     checked={showEmail}
                     onCheckedChange={setShowEmail}
                     disabled={isLoading}
+                    onClick={(e) => e.stopPropagation()}
                   />
-                </div>
+                </button>
 
-                <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  className="flex items-center justify-between w-full p-3 -m-3 rounded-xl hover:bg-muted/50 transition-colors disabled:opacity-50"
+                  onClick={() => !isLoading && phone && setShowPhone(!showPhone)}
+                  disabled={isLoading || !phone}
+                >
                   <div className="flex items-center gap-3">
                     <Phone className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <Label htmlFor="show-phone" className="text-sm font-medium cursor-pointer">
+                    <div className="text-left">
+                      <span className="text-sm font-medium">
                         Show Phone Number
-                      </Label>
+                      </span>
                       <p className="text-xs text-muted-foreground">
                         {phone || "No phone number added"}
                       </p>
@@ -639,8 +650,9 @@ export default function EditProfile() {
                     checked={showPhone}
                     onCheckedChange={setShowPhone}
                     disabled={isLoading || !phone}
+                    onClick={(e) => e.stopPropagation()}
                   />
-                </div>
+                </button>
               </div>
             </div>
 

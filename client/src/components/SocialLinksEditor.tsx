@@ -181,7 +181,7 @@ export function SocialLinksEditor({ links, onChange, disabled }: SocialLinksEdit
           <Button
             type="button"
             variant="outline"
-            className="w-full border-dashed"
+            className="w-full border-dashed min-h-[48px]"
             disabled={disabled}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -200,7 +200,7 @@ export function SocialLinksEditor({ links, onChange, disabled }: SocialLinksEdit
                   key={type}
                   type="button"
                   variant="outline"
-                  className="flex flex-col items-center gap-2 h-auto py-4 hover:bg-primary/10 hover:border-primary"
+                  className="flex flex-col items-center gap-2 h-auto py-4 min-h-[72px] hover:bg-primary/10 hover:border-primary"
                   onClick={() => handleAddLink(type as SocialPlatformType)}
                 >
                   <Icon className="h-6 w-6" />

@@ -160,6 +160,25 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Mobile touch improvements - prevent 300ms tap delay and improve touch responsiveness */
+button,
+[role="button"],
+[role="switch"],
+input[type="checkbox"],
+input[type="radio"],
+a,
+label {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure Radix UI components are touchable on iOS PWA */
+[data-radix-popper-content-wrapper],
+[data-radix-dialog-content],
+[data-radix-dialog-overlay] {
+  touch-action: auto !important;
+}
+
 /* Safe area padding for notched devices */
 .pb-safe {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
