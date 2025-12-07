@@ -126,6 +126,9 @@ export default function Chat() {
     }
   }, [dmUserId, markMessagesAsRead]);
 
+  // Custom topic order: General first, then Events, Tech, Fundraising, Hiring, then others
+  const TOPIC_ORDER = ["general", "events", "tech", "fundraising", "hiring"];
+
   // Fetch topics
   const { data: topics, isLoading: topicsLoading } = useQuery({
     queryKey: ["topics"],
@@ -136,7 +139,23 @@ export default function Chat() {
         .order("created_at", { ascending: true });
 
       if (error) throw error;
-      return data as Topic[];
+
+      // Sort topics by custom order
+      const sortedData = (data as Topic[]).sort((a, b) => {
+        const aIndex = TOPIC_ORDER.indexOf(a.slug?.toLowerCase() || a.name.toLowerCase());
+        const bIndex = TOPIC_ORDER.indexOf(b.slug?.toLowerCase() || b.name.toLowerCase());
+
+        // If both are in the custom order, sort by that order
+        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+        // If only a is in custom order, a comes first
+        if (aIndex !== -1) return -1;
+        // If only b is in custom order, b comes first
+        if (bIndex !== -1) return 1;
+        // Otherwise keep original order (by created_at)
+        return 0;
+      });
+
+      return sortedData;
     },
   });
 
