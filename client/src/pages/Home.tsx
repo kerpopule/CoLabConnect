@@ -1,9 +1,25 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ScanLine, Users, ArrowUpRight } from "lucide-react";
+import { ArrowRight, ScanLine, Users, ArrowUpRight, Loader2 } from "lucide-react";
 import generatedImage from '@assets/generated_images/abstract_modern_community_connection_graphic.png';
+import { useQuery } from "@tanstack/react-query";
+import { supabase, Topic } from "@/lib/supabase";
 
 export default function Home() {
+  // Fetch real topics from Supabase
+  const { data: topics, isLoading: topicsLoading } = useQuery({
+    queryKey: ["topics"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("topics")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      return data as Topic[];
+    },
+  });
+
   return (
     <div className="space-y-8 pb-24 md:pb-8">
       {/* Hero Section */}
@@ -73,7 +89,7 @@ export default function Home() {
       {/* Trending Topics Preview */}
       <section>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-display font-bold">Trending Topics</h2>
+          <h2 className="text-xl font-display font-bold">Chat Rooms</h2>
           <Link href="/chat">
             <span className="text-sm font-medium text-primary flex items-center hover:underline cursor-pointer">
               View all <ArrowUpRight className="ml-1 h-3 w-3" />
@@ -81,13 +97,25 @@ export default function Home() {
           </Link>
         </div>
         <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
-          {["Startup Funding", "Tech Hiring", "Events", "Pensacola Beach"].map((topic, i) => (
-            <Link key={i} href="/chat">
-              <div className="whitespace-nowrap px-4 py-2 rounded-full bg-muted border border-transparent hover:border-primary/20 hover:bg-white dark:hover:bg-gray-800 transition-colors cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
-                # {topic}
-              </div>
-            </Link>
-          ))}
+          {topicsLoading ? (
+            <div className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading topics...
+            </div>
+          ) : topics && topics.length > 0 ? (
+            topics.map((topic) => (
+              <Link key={topic.id} href="/chat">
+                <div className="whitespace-nowrap px-4 py-2 rounded-full bg-muted border border-transparent hover:border-primary/20 hover:bg-white dark:hover:bg-gray-800 transition-colors cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground flex items-center gap-1.5">
+                  <span>{topic.icon || "#"}</span>
+                  {topic.name}
+                </div>
+              </Link>
+            ))
+          ) : (
+            <div className="px-4 py-2 text-sm text-muted-foreground">
+              No chat rooms available yet
+            </div>
+          )}
         </div>
       </section>
     </div>

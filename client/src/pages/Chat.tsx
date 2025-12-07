@@ -183,10 +183,47 @@ export default function Chat() {
 
   const displayTopics = topics && topics.length > 0 ? topics : FALLBACK_TOPICS;
 
-  // Set initial active topic
+  // Cache key for storing last visited chat
+  const LAST_CHAT_KEY = "colab-last-chat";
+
+  // Save last visited chat to localStorage whenever it changes
+  useEffect(() => {
+    if (activeTopic && !activeDm && chatMode === "public") {
+      localStorage.setItem(LAST_CHAT_KEY, JSON.stringify({ type: "topic", id: activeTopic }));
+    } else if (activeDm && chatMode === "private") {
+      localStorage.setItem(LAST_CHAT_KEY, JSON.stringify({ type: "dm", id: activeDm }));
+    }
+  }, [activeTopic, activeDm, chatMode]);
+
+  // Set initial active topic - default to "general" or cached chat
   useEffect(() => {
     if (!activeDm && displayTopics.length > 0 && !activeTopic) {
-      setActiveTopic(displayTopics[0].id);
+      // Check for cached last chat
+      const cachedChat = localStorage.getItem(LAST_CHAT_KEY);
+      if (cachedChat) {
+        try {
+          const parsed = JSON.parse(cachedChat);
+          if (parsed.type === "topic") {
+            // Verify the topic still exists
+            const topicExists = displayTopics.find(t => t.id === parsed.id);
+            if (topicExists) {
+              setActiveTopic(parsed.id);
+              return;
+            }
+          }
+          // For DMs, we don't auto-restore since the user navigated to public chat
+        } catch {
+          // Invalid cache, fall through to default
+        }
+      }
+
+      // Default to "general" topic if it exists, otherwise first topic
+      const generalTopic = displayTopics.find(t => t.slug === "general" || t.name.toLowerCase() === "general");
+      if (generalTopic) {
+        setActiveTopic(generalTopic.id);
+      } else {
+        setActiveTopic(displayTopics[0].id);
+      }
     }
   }, [displayTopics, activeTopic, activeDm]);
 

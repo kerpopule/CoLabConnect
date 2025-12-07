@@ -125,6 +125,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // Chat page needs fixed height to prevent outer scroll
   const isChatPage = location === "/chat";
 
+  // Add/remove chat-page-active class on body for mobile scroll lock
+  useEffect(() => {
+    if (isChatPage) {
+      document.body.classList.add("chat-page-active");
+    } else {
+      document.body.classList.remove("chat-page-active");
+    }
+    return () => {
+      document.body.classList.remove("chat-page-active");
+    };
+  }, [isChatPage]);
+
+  // Update theme-color meta tag based on dark mode
+  useEffect(() => {
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      // Light mode: #f8fafc (very light cool gray), Dark mode: #0f172a (deep slate)
+      metaThemeColor.setAttribute("content", isDark ? "#0f172a" : "#f8fafc");
+    }
+  }, [isDark]);
+
   return (
     <div className={`bg-background flex flex-col pb-20 md:pb-0 font-sans ${isChatPage ? "h-dvh overflow-hidden fixed inset-0 md:relative md:h-screen" : "min-h-screen"}`}>
       {/* Mobile Top Bar - only show on profile page */}

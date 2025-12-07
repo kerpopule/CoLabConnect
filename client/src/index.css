@@ -177,29 +177,23 @@
   }
 }
 
-/* Mobile layout - prevent outer scrolling */
+/* Mobile layout - only lock scroll on chat page (controlled via body class) */
 @media (max-width: 768px) {
-  html, body {
-    height: 100%;
-    height: 100dvh;
+  body.chat-page-active {
     overflow: hidden;
     position: fixed;
     width: 100%;
+    height: 100%;
+    height: 100dvh;
   }
 
-  #root {
-    height: 100%;
-    height: 100dvh;
+  body.chat-page-active #root {
     overflow: hidden;
     position: fixed;
     width: 100%;
+    height: 100%;
+    height: 100dvh;
     top: 0;
     left: 0;
-  }
-
-  /* Only allow scrolling within specific containers */
-  .mobile-scroll-container {
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
   }
 }
