@@ -13,6 +13,7 @@ import {
   UserCog,
   Phone,
   Type,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +21,7 @@ import { SocialLinksDisplay } from "@/components/SocialLinksEditor";
 import { migrateOldSocialLinks } from "@/lib/utils";
 import { NotificationSettings } from "@/components/NotificationSettings";
 import { Switch } from "@/components/ui/switch";
+import { downloadVCard } from "@/lib/vcard";
 
 // Text size preference key
 const TEXT_SIZE_KEY = "colab_large_text";
@@ -83,6 +85,31 @@ export default function MyProfile() {
       .join("")
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const handleSaveContact = () => {
+    if (!profile) return;
+
+    const socialLinksData = migrateOldSocialLinks(profile.social_links);
+    const websiteLink = socialLinksData.find(l => l.type === 'website')?.url;
+    const linkedinLink = socialLinksData.find(l => l.type === 'linkedin')?.url;
+
+    // For own profile, include all contact info (user can share their full contact)
+    downloadVCard({
+      name: profile.name,
+      email: profile.email || undefined,
+      phone: profile.phone || undefined,
+      role: profile.role || undefined,
+      company: profile.company || undefined,
+      bio: profile.bio || undefined,
+      website: websiteLink,
+      linkedin: linkedinLink,
+    }, profile.name.replace(/\s+/g, '_'));
+
+    toast({
+      title: "Contact saved!",
+      description: "Your contact card has been downloaded. Share it with others!",
+    });
   };
 
   if (loading) {
@@ -198,6 +225,15 @@ export default function MyProfile() {
               <SocialLinksDisplay links={socialLinks} />
             </div>
           )}
+
+          {/* Save Contact Button */}
+          <Button
+            className="w-full h-14 rounded-xl bg-green-600 hover:bg-green-700 text-white hover:scale-[1.02] hover:shadow-lg transition-all text-lg font-medium mb-6"
+            onClick={handleSaveContact}
+          >
+            <Download className="h-5 w-5 mr-2" />
+            Save Contact
+          </Button>
 
           {/* Contact Visibility Settings */}
           <div className="pt-6 border-t border-border">

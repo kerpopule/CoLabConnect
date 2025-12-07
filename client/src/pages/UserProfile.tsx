@@ -15,6 +15,7 @@ import {
   Briefcase,
   LogIn,
   Phone,
+  Download,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Profile, Connection } from "@/lib/supabase";
@@ -22,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { SocialLinksDisplay } from "@/components/SocialLinksEditor";
 import { migrateOldSocialLinks } from "@/lib/utils";
+import { downloadVCard } from "@/lib/vcard";
 
 const QR_ACCESS_KEY = "colab-qr-access";
 
@@ -212,6 +214,30 @@ export default function UserProfile() {
 
     // Navigate to chat with this user's private channel
     setLocation(`/chat?dm=${id}`);
+  };
+
+  const handleSaveContact = () => {
+    if (!profile) return;
+
+    const socialLinksData = migrateOldSocialLinks(profile.social_links);
+    const websiteLink = socialLinksData.find(l => l.type === 'website')?.url;
+    const linkedinLink = socialLinksData.find(l => l.type === 'linkedin')?.url;
+
+    downloadVCard({
+      name: profile.name,
+      email: profile.show_email !== false ? profile.email : undefined,
+      phone: profile.show_phone ? (profile.phone || undefined) : undefined,
+      role: profile.role || undefined,
+      company: profile.company || undefined,
+      bio: profile.bio || undefined,
+      website: websiteLink,
+      linkedin: linkedinLink,
+    }, profile.name.replace(/\s+/g, '_'));
+
+    toast({
+      title: "Contact saved!",
+      description: `${profile.name}'s contact card has been downloaded.`,
+    });
   };
 
   if (isLoading) {
@@ -437,11 +463,20 @@ export default function UserProfile() {
 
           {/* Social Links */}
           {socialLinks.length > 0 && (
-            <div>
+            <div className="mb-6">
               <h3 className="text-sm font-semibold text-muted-foreground mb-3">Connect</h3>
               <SocialLinksDisplay links={socialLinks} />
             </div>
           )}
+
+          {/* Save Contact Button */}
+          <Button
+            className="w-full h-14 rounded-xl bg-green-600 hover:bg-green-700 text-white hover:scale-[1.02] hover:shadow-lg transition-all text-lg font-medium"
+            onClick={handleSaveContact}
+          >
+            <Download className="h-5 w-5 mr-2" />
+            Save Contact
+          </Button>
         </CardContent>
       </Card>
     </div>
