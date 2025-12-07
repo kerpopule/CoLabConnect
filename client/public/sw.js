@@ -1,6 +1,6 @@
 // Co:Lab Connect Service Worker for Push Notifications
 
-const CACHE_NAME = 'colab-connect-v1';
+const CACHE_NAME = 'colab-connect-v2';
 
 // Install event - cache essential files
 self.addEventListener('install', (event) => {
