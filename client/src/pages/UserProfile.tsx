@@ -298,8 +298,7 @@ export default function UserProfile() {
                     className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
                   >
                     <Mail className="h-4 w-4" />
-                    <span className="hidden sm:inline">{profile.email}</span>
-                    <span className="sm:hidden">Email</span>
+                    <span className="truncate max-w-[200px] sm:max-w-none">{profile.email}</span>
                   </a>
                 )}
                 {/* Phone: show if visible OR if viewing own profile */}

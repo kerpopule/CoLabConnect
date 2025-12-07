@@ -50,6 +50,7 @@ export default function EditProfile() {
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
+  const [displayEmail, setDisplayEmail] = useState("");
   const [showEmail, setShowEmail] = useState(true);
   const [showPhone, setShowPhone] = useState(false);
 
@@ -63,6 +64,8 @@ export default function EditProfile() {
       setTags((profile.tags || []).join(", "));
       setAvatarUrl(profile.avatar_url || null);
       setPhone(profile.phone || "");
+      // Use profile email if set, otherwise fall back to auth email
+      setDisplayEmail(profile.email || user?.email || "");
       // Default to true for email if not set, false for phone
       setShowEmail(profile.show_email ?? true);
       setShowPhone(profile.show_phone ?? false);
@@ -70,7 +73,7 @@ export default function EditProfile() {
       const links = migrateOldSocialLinks(profile.social_links);
       setSocialLinks(links);
     }
-  }, [profile]);
+  }, [profile, user]);
 
   // Resize and compress image before upload to avoid timeout issues
   const resizeImage = (file: File | Blob, maxSize: number = 1200): Promise<Blob> => {
@@ -352,6 +355,7 @@ export default function EditProfile() {
       bio: bio || null,
       tags: tagsArray.length > 0 ? tagsArray : [],
       social_links: normalizedLinks,
+      email: displayEmail || user?.email || null,
       phone: phone || null,
       show_email: showEmail,
       show_phone: showPhone,
@@ -463,16 +467,14 @@ export default function EditProfile() {
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
       <div className="flex items-center gap-4">
-        {!isNewUser && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full"
-            onClick={() => setLocation("/my-profile")}
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-full"
+          onClick={() => setLocation("/my-profile")}
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
         <div>
           <h1 className="text-3xl font-display font-bold text-foreground">
             {isNewUser ? "Complete Your Profile" : "Edit Profile"}
@@ -576,6 +578,25 @@ export default function EditProfile() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="displayEmail">Display Email</Label>
+              <p className="text-xs text-muted-foreground">
+                This email will be shown on your profile. You can use a different email than the one you signed up with.
+              </p>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="displayEmail"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={displayEmail}
+                  onChange={(e) => setDisplayEmail(e.target.value)}
+                  className="bg-muted/30 pl-10"
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="phone">Phone Number (Optional)</Label>
               <div className="relative">
                 <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -607,7 +628,7 @@ export default function EditProfile() {
                         Show Email Address
                       </span>
                       <p className="text-xs text-muted-foreground">
-                        {user?.email}
+                        {displayEmail || user?.email || "No email set"}
                       </p>
                     </div>
                   </div>
