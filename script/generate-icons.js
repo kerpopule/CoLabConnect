@@ -1,72 +1,11 @@
 import sharp from 'sharp';
-import { readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const publicDir = join(__dirname, '..', 'client', 'public');
-
-// Create a simple clean icon SVG with connected people symbol on teal background
-const createIconSvg = (size) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
-  <!-- Teal background -->
-  <rect width="${size}" height="${size}" fill="#14b8a6"/>
-
-  <!-- Simplified connected people symbol in white - centered -->
-  <g transform="translate(${size/2}, ${size * 0.45})">
-    <!-- Top circle -->
-    <circle cx="0" cy="${-size * 0.16}" r="${size * 0.065}" fill="white"/>
-
-    <!-- Top arc -->
-    <path d="M${-size * 0.1},${-size * 0.1}
-             Q${-size * 0.14},${-size * 0.02} ${-size * 0.08},${size * 0.06}
-             Q${-size * 0.02},${size * 0.12} ${size * 0.08},${size * 0.06}
-             Q${size * 0.14},${-size * 0.02} ${size * 0.1},${-size * 0.1}"
-          fill="none" stroke="white" stroke-width="${size * 0.045}" stroke-linecap="round"/>
-
-    <!-- Left circle -->
-    <circle cx="${-size * 0.14}" cy="${size * 0.08}" r="${size * 0.065}" fill="white"/>
-
-    <!-- Left arc -->
-    <path d="M${-size * 0.18},${size * 0.02}
-             Q${-size * 0.08},${size * 0.02} ${-size * 0.02},${size * 0.1}
-             Q${size * 0.02},${size * 0.18} ${-size * 0.02},${size * 0.22}
-             Q${-size * 0.08},${size * 0.28} ${-size * 0.14},${size * 0.22}"
-          fill="none" stroke="white" stroke-width="${size * 0.045}" stroke-linecap="round"/>
-
-    <!-- Right circle -->
-    <circle cx="${size * 0.14}" cy="${size * 0.08}" r="${size * 0.065}" fill="white"/>
-
-    <!-- Right arc -->
-    <path d="M${size * 0.18},${size * 0.02}
-             Q${size * 0.08},${size * 0.02} ${size * 0.02},${size * 0.1}
-             Q${-size * 0.02},${size * 0.18} ${size * 0.02},${size * 0.22}
-             Q${size * 0.08},${size * 0.28} ${size * 0.14},${size * 0.22}"
-          fill="none" stroke="white" stroke-width="${size * 0.045}" stroke-linecap="round"/>
-  </g>
-</svg>`;
-
-// Simpler version - just three connected circles
-const createSimpleIconSvg = (size) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
-  <!-- Teal background -->
-  <rect width="${size}" height="${size}" fill="#14b8a6"/>
-
-  <!-- Three connected circles representing community -->
-  <g transform="translate(${size/2}, ${size/2})" fill="white">
-    <!-- Top circle -->
-    <circle cx="0" cy="${-size * 0.15}" r="${size * 0.12}"/>
-
-    <!-- Bottom left circle -->
-    <circle cx="${-size * 0.13}" cy="${size * 0.1}" r="${size * 0.12}"/>
-
-    <!-- Bottom right circle -->
-    <circle cx="${size * 0.13}" cy="${size * 0.1}" r="${size * 0.12}"/>
-
-    <!-- Connecting lines (thicker) -->
-    <line x1="0" y1="${-size * 0.03}" x2="${-size * 0.08}" y2="${size * 0.02}" stroke="white" stroke-width="${size * 0.06}"/>
-    <line x1="0" y1="${-size * 0.03}" x2="${size * 0.08}" y2="${size * 0.02}" stroke="white" stroke-width="${size * 0.06}"/>
-    <line x1="${-size * 0.05}" y1="${size * 0.1}" x2="${size * 0.05}" y2="${size * 0.1}" stroke="white" stroke-width="${size * 0.06}"/>
-  </g>
-</svg>`;
+const rootDir = join(__dirname, '..');
+const publicDir = join(rootDir, 'client', 'public');
+const sourceIcon = join(rootDir, 'colab icon.png');
 
 async function generateIcons() {
   const sizes = [
@@ -76,12 +15,33 @@ async function generateIcons() {
     { name: 'favicon.png', size: 32 },
   ];
 
-  for (const { name, size } of sizes) {
-    const svg = createSimpleIconSvg(size);
-    const svgBuffer = Buffer.from(svg);
+  // Read the source icon and get its metadata
+  const image = sharp(sourceIcon);
+  const metadata = await image.metadata();
 
-    await sharp(svgBuffer)
-      .resize(size, size)
+  console.log(`Source image: ${metadata.width}x${metadata.height}`);
+
+  // Crop out the black border and white corners
+  // The border appears to be about 3-4% on each side
+  const cropPercent = 0.04;
+  const cropPx = Math.floor(metadata.width * cropPercent);
+
+  const extractOptions = {
+    left: cropPx,
+    top: cropPx,
+    width: metadata.width - (cropPx * 2),
+    height: metadata.height - (cropPx * 2)
+  };
+
+  console.log(`Cropping: ${cropPx}px from each edge`);
+
+  for (const { name, size } of sizes) {
+    await sharp(sourceIcon)
+      .extract(extractOptions)
+      .resize(size, size, {
+        fit: 'cover',
+        position: 'center'
+      })
       .png()
       .toFile(join(publicDir, name));
 
