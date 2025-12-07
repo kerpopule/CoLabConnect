@@ -21,26 +21,25 @@ async function generateIcons() {
 
   console.log(`Source image: ${metadata.width}x${metadata.height}`);
 
-  // Crop out the black border and white corners
-  // The border appears to be about 3-4% on each side
-  const cropPercent = 0.04;
-  const cropPx = Math.floor(metadata.width * cropPercent);
+  // Crop out just the black border and white corners (minimal crop)
+  // Then use 'contain' with white background to fit all content
+  const borderCrop = Math.floor(metadata.width * 0.04); // Just the border
 
   const extractOptions = {
-    left: cropPx,
-    top: cropPx,
-    width: metadata.width - (cropPx * 2),
-    height: metadata.height - (cropPx * 2)
+    left: borderCrop,
+    top: borderCrop,
+    width: metadata.width - (borderCrop * 2),
+    height: metadata.height - (borderCrop * 2)
   };
 
-  console.log(`Cropping: ${cropPx}px from each edge`);
+  console.log(`Cropping: ${borderCrop}px border from each edge`);
 
   for (const { name, size } of sizes) {
     await sharp(sourceIcon)
       .extract(extractOptions)
       .resize(size, size, {
-        fit: 'cover',
-        position: 'center'
+        fit: 'contain',
+        background: { r: 255, g: 255, b: 255, alpha: 1 }
       })
       .png()
       .toFile(join(publicDir, name));
