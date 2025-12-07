@@ -159,3 +159,28 @@
   touch-action: pan-x;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Safe area padding for notched devices */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* Fix for iOS virtual keyboard */
+@supports (-webkit-touch-callout: none) {
+  .h-dvh {
+    height: 100dvh;
+  }
+}
+
+/* Chat input should stay visible when keyboard is open */
+@media (max-width: 768px) {
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100%;
+    overflow: auto;
+  }
+}

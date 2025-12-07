@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Hash, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2 } from "lucide-react";
+import { Send, Hash, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Topic, Message, Profile, PrivateMessage, getPrivateChatId } from "@/lib/supabase";
@@ -65,9 +64,11 @@ export default function Chat() {
   const [aiPending, setAiPending] = useState(false);
   const { user, profile: currentUserProfile, loading: authLoading } = useAuth();
   const queryClient = useQueryClient();
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
 
   // Topic follow for notifications
   const { isFollowing: isFollowingTopic, isLoading: followLoading, toggleFollow } = useTopicFollow(activeTopic);
@@ -320,13 +321,57 @@ export default function Chat() {
     };
   }, [user, activeDm, queryClient]);
 
-  // Scroll to bottom when new messages arrive
+  // Check if user is at or near the bottom of the scroll
+  const checkIfAtBottom = useCallback(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return true;
+
+    const threshold = 100; // pixels from bottom to consider "at bottom"
+    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    return distanceFromBottom < threshold;
+  }, []);
+
+  // Handle scroll events
+  const handleScroll = useCallback(() => {
+    const atBottom = checkIfAtBottom();
+    setIsAtBottom(atBottom);
+    setShowScrollButton(!atBottom);
+  }, [checkIfAtBottom]);
+
+  // Setup scroll listener
+  useEffect(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return;
+
+    viewport.addEventListener('scroll', handleScroll);
+    return () => viewport.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
+
+  // Scroll to bottom function
+  const scrollToBottom = useCallback((smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: smooth ? "smooth" : "auto"
+    });
+    setShowScrollButton(false);
+    setIsAtBottom(true);
+  }, []);
+
+  // Scroll to bottom when new messages arrive (only if already at bottom)
   useEffect(() => {
     // Use setTimeout to ensure DOM has updated
     setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      if (isAtBottom) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
     }, 100);
-  }, [messages, privateMessages, aiMessages]);
+  }, [messages, privateMessages, aiMessages, isAtBottom]);
+
+  // Always scroll to bottom on initial load or chat switch
+  useEffect(() => {
+    setTimeout(() => {
+      scrollToBottom(false);
+    }, 200);
+  }, [activeTopic, activeDm, chatMode, scrollToBottom]);
 
   // Send AI message
   const sendAiMessage = async (content: string) => {
@@ -567,9 +612,9 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-112px)] md:h-[calc(100vh-100px)] rounded-3xl overflow-hidden border border-border bg-card shadow-sm">
+    <div className="flex flex-col h-[calc(100dvh-112px)] md:h-[calc(100vh-100px)] rounded-3xl overflow-hidden border border-border bg-card shadow-sm">
       {/* Topics Header / Scroll */}
-      <div className="bg-muted/30 border-b border-border p-3">
+      <div className="bg-muted/30 border-b border-border p-3 shrink-0">
         <div className="flex items-center gap-2">
           {/* Mode toggle button - left side (only show when not in AI mode) */}
           {chatMode !== "ai" && (
@@ -751,8 +796,11 @@ export default function Chat() {
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-background relative">
-        <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+      <div className="flex-1 flex flex-col bg-background relative min-h-0">
+        <div
+          ref={scrollViewportRef}
+          className="flex-1 p-4 min-h-0 overflow-y-auto scroll-smooth"
+        >
           <div className="space-y-6">
             <div className="flex justify-center my-4">
               <span className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full flex items-center gap-2">
@@ -940,10 +988,21 @@ export default function Chat() {
             {/* Scroll anchor for auto-scroll to bottom */}
             <div ref={messagesEndRef} />
           </div>
-        </ScrollArea>
+        </div>
 
-        {/* Input Area */}
-        <div className="p-3 md:p-4 bg-card border-t border-border">
+        {/* Scroll to bottom button */}
+        {showScrollButton && (
+          <button
+            onClick={() => scrollToBottom(true)}
+            className="absolute bottom-20 right-4 z-10 w-10 h-10 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-all hover:scale-110 animate-in fade-in slide-in-from-bottom-2"
+            aria-label="Scroll to latest messages"
+          >
+            <ChevronDown className="h-5 w-5" />
+          </button>
+        )}
+
+        {/* Input Area - Fixed at bottom */}
+        <div className="shrink-0 p-3 md:p-4 pb-safe bg-card border-t border-border sticky bottom-0">
           <form onSubmit={handleSend} className="flex gap-2 relative">
             <Button
               type="button"
