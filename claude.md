@@ -280,6 +280,120 @@ className="rounded-full focus:ring-2 focus:ring-primary/20"
 - **Border Radius**: Generally `rounded-xl` or `rounded-2xl`
 - **Shadows**: `shadow-sm` for cards, `shadow-lg` on hover
 
+## Production Deployment
+
+### Architecture
+
+The production server runs on DigitalOcean with:
+- **Caddy** (reverse proxy in Docker) handles HTTPS/SSL for `colabconnect.app`
+- **colab-connect** Docker container serves the app on port 3000
+- Caddy routes traffic to the container via Docker network `n8n-docker-caddy_default`
+
+```
+Internet → Caddy (ports 80/443) → Docker network → colab-connect:3000
+```
+
+### Server Access
+
+```bash
+ssh colab-droplet   # Uses ~/.ssh/id_ed25519_digitalocean
+# Server IP: 104.131.176.167
+# Project path: /root/CoLabConnect
+```
+
+### Deployment Steps (REQUIRED)
+
+**IMPORTANT**: Code changes require rebuilding the Docker container. Just pushing to git or running `npm run build` is NOT enough.
+
+```bash
+# 1. Commit and push changes locally
+git add . && git commit -m "Your message" && git push
+
+# 2. SSH into server
+ssh colab-droplet
+
+# 3. Pull latest code
+cd /root/CoLabConnect && git pull
+
+# 4. Stop and remove old container
+docker stop colab-connect && docker rm colab-connect
+
+# 5. Rebuild Docker image (includes npm install + build)
+source .env && docker build \
+  --build-arg VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
+  --build-arg VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY \
+  --build-arg VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY \
+  -t colab-connect .
+
+# 6. Start new container ON THE CADDY NETWORK
+docker run -d \
+  --name colab-connect \
+  -p 5000:3000 \
+  --network n8n-docker-caddy_default \
+  --env-file .env \
+  colab-connect
+
+# 7. Verify it's running
+docker logs colab-connect --tail 10
+curl -sI https://colabconnect.app | head -5
+```
+
+### Common Deployment Mistakes
+
+1. **Only running `npm run build`** - The Docker container has its own filesystem. Builds on the host don't affect it.
+
+2. **Forgetting `--network n8n-docker-caddy_default`** - Caddy uses container DNS names. Without the network, Caddy can't reach the container and returns 502.
+
+3. **Not pulling git changes first** - Docker builds from the local filesystem, not from git directly.
+
+4. **Container port confusion** - The Dockerfile uses port 3000 internally. We map external 5000 to internal 3000, but Caddy connects to port 3000 via Docker DNS.
+
+### Checking Deployment Status
+
+```bash
+# Check container is running
+docker ps | grep colab-connect
+
+# Check container logs
+docker logs colab-connect --tail 50
+
+# Check Caddy can reach it
+docker exec n8n-docker-caddy-caddy-1 wget -qO- http://colab-connect:3000 | head -5
+
+# Check from outside
+curl -sI https://colabconnect.app
+```
+
+### Rollback
+
+```bash
+# If deployment fails, the old image might still exist
+docker images | grep colab-connect
+
+# Re-run previous image by tag (if you tagged it)
+docker run -d --name colab-connect -p 5000:3000 \
+  --network n8n-docker-caddy_default \
+  --env-file .env \
+  colab-connect:previous
+```
+
+### Caddyfile Location
+
+The Caddy config is at `/opt/n8n-docker-caddy/caddy_config/Caddyfile`
+
+```
+colabconnect.app {
+    reverse_proxy colab-connect:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    encode gzip
+    ...
+}
+```
+
 ## Testing Considerations
 
 - No test framework currently configured

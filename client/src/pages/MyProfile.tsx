@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -131,12 +131,13 @@ export default function MyProfile() {
 
           {/* Action buttons */}
           <div className="flex justify-center gap-3 mb-6">
-            <Link href="/profile/edit">
-              <Button className="rounded-full hover:scale-105 hover:shadow-lg hover:brightness-110 transition-all">
-                <UserCog className="h-4 w-4 mr-2" />
-                Edit Profile
-              </Button>
-            </Link>
+            <Button
+              className="rounded-full hover:scale-105 hover:shadow-lg hover:brightness-110 transition-all min-h-[44px]"
+              onClick={() => setLocation("/profile/edit")}
+            >
+              <UserCog className="h-4 w-4 mr-2" />
+              Edit Profile
+            </Button>
           </div>
 
           {/* Bio */}
