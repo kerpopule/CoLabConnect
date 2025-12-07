@@ -41,7 +41,7 @@ export default function Home() {
               </div>
               <div>
                 <h3 className="text-2xl font-display font-bold mb-1">Join the Community</h3>
-                <p className="text-primary-foreground/80 text-sm">Create your digital card & scan QR</p>
+                <p className="text-primary-foreground/80 text-sm">Create your account & connect</p>
               </div>
               <div className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1">
                 <ArrowRight className="h-6 w-6" />

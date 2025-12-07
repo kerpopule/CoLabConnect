@@ -2,86 +2,218 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Filter, Globe, Linkedin, Twitter } from "lucide-react";
+import { Search, Loader2, UserPlus, UserCheck, Clock } from "lucide-react";
 import { motion } from "framer-motion";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase, Profile, Connection } from "@/lib/supabase";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+import { Link, useLocation } from "wouter";
+import { SocialLinksDisplay } from "@/components/SocialLinksEditor";
+import { migrateOldSocialLinks } from "@/lib/utils";
 
-// Mock Data
-const USERS = [
+// Fallback mock data for when database is empty
+const MOCK_USERS: Partial<Profile>[] = [
   {
-    id: 1,
+    id: "mock-1",
     name: "Alex Rivera",
     role: "Founder & CEO",
     company: "FinFlow",
     bio: "Building the future of seamless payments for local businesses. Looking for a technical co-founder.",
-    image: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&q=80&w=200&h=200",
+    avatar_url: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&q=80&w=200&h=200",
     tags: ["Fintech", "Founder", "Sales"],
-    color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+    email: "alex@example.com",
+    social_links: { linkedin: "https://linkedin.com" },
   },
   {
-    id: 2,
+    id: "mock-2",
     name: "Sarah Chen",
     role: "UX Designer",
     company: "Freelance",
     bio: "Product designer with 5 years experience in SaaS. I help startups turn complex problems into simple interfaces.",
-    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200&h=200",
+    avatar_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200&h=200",
     tags: ["Design", "UX/UI", "Web"],
-    color: "bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300"
+    email: "sarah@example.com",
   },
   {
-    id: 3,
+    id: "mock-3",
     name: "Marcus Johnson",
     role: "Angel Investor",
     company: "Gulf Coast Ventures",
     bio: "Investing in early-stage tech in the Panhandle. Interested in HealthTech and EdTech.",
-    image: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200&h=200",
+    avatar_url: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200&h=200",
     tags: ["Investor", "Mentor", "HealthTech"],
-    color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+    email: "marcus@example.com",
   },
-  {
-    id: 4,
-    name: "Emily Davis",
-    role: "Full Stack Dev",
-    company: "Remote",
-    bio: "React/Node.js specialist. Love building MVPs and scaling architectures.",
-    image: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=200&h=200",
-    tags: ["Developer", "React", "Node.js"],
-    color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
-  },
-   {
-    id: 5,
-    name: "David Kim",
-    role: "Marketing Lead",
-    company: "GrowthLabs",
-    bio: "Growth hacker helping startups reach their first 10k users. Expert in SEO and paid acquisition.",
-    image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200&h=200",
-    tags: ["Marketing", "Growth", "SEO"],
-    color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
-  }
 ];
 
 export default function Directory() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const allTags = Array.from(new Set(USERS.flatMap(u => u.tags)));
+  // Fetch profiles from Supabase
+  const { data: profiles, isLoading, error, isError } = useQuery({
+    queryKey: ["profiles"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-  const filteredUsers = USERS.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          user.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          user.tags.some(t => t.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesTag = selectedTag ? user.tags.includes(selectedTag) : true;
+      if (error) {
+        console.error("Error fetching profiles:", error);
+        throw error;
+      }
+      return data as Profile[];
+    },
+    retry: 1,
+    staleTime: 30000, // 30 seconds
+  });
+
+  // Fetch user's connections to show connection status
+  const { data: myConnections } = useQuery({
+    queryKey: ["my-connections", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+
+      // Get all connections where I'm involved
+      const { data, error } = await supabase
+        .from("connections")
+        .select("*")
+        .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`);
+
+      if (error) {
+        console.error("Error fetching connections:", error);
+        return [];
+      }
+      return data as Connection[];
+    },
+    enabled: !!user,
+  });
+
+  // Helper to get connection status with a user
+  const getConnectionStatus = (profileId: string): "none" | "pending" | "connected" => {
+    if (!user || !myConnections) return "none";
+
+    const connection = myConnections.find(
+      (c) =>
+        (c.follower_id === user.id && c.following_id === profileId) ||
+        (c.following_id === user.id && c.follower_id === profileId)
+    );
+
+    if (!connection) return "none";
+    if (connection.status === "accepted") return "connected";
+    return "pending";
+  };
+
+  // Use mock data if no profiles exist yet
+  const displayProfiles = profiles && profiles.length > 0 ? profiles : MOCK_USERS;
+
+  const allTags = Array.from(
+    new Set(displayProfiles.flatMap((u) => u.tags || []))
+  );
+
+  const filteredUsers = displayProfiles.filter((profile) => {
+    const matchesSearch =
+      profile.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      profile.role?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      profile.tags?.some((t) =>
+        t.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    const matchesTag = selectedTag
+      ? profile.tags?.includes(selectedTag)
+      : true;
     return matchesSearch && matchesTag;
   });
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  // Send connection request mutation
+  const sendConnectionRequest = useMutation({
+    mutationFn: async (targetUserId: string) => {
+      if (!user) throw new Error("Not authenticated");
+
+      const { error } = await supabase.from("connections").insert({
+        follower_id: user.id,
+        following_id: targetUserId,
+        status: "pending",
+      } as any);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      toast({
+        title: "Connection request sent!",
+        description: "You'll be notified when they respond.",
+      });
+    },
+    onError: (error: any) => {
+      if (error.message.includes("duplicate")) {
+        toast({
+          title: "Already requested",
+          description: "You've already sent a connection request to this person.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Failed to send request",
+          description: error.message,
+        });
+      }
+    },
+  });
+
+  const handleConnect = async (targetUserId: string) => {
+    if (!user) {
+      toast({
+        variant: "destructive",
+        title: "Sign in required",
+        description: "Please sign in to connect with other members.",
+      });
+      return;
+    }
+
+    sendConnectionRequest.mutate(targetUserId);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Loading community members...</p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <p className="text-muted-foreground">Failed to load members. Showing sample data.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-24">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold">Directory</h1>
-          <p className="text-muted-foreground">Discover {USERS.length} members in the community</p>
-        </div>
-        <div className="flex gap-2">
-           {/* Mobile Filter Sheet could go here, keeping it simple for now */}
+          <p className="text-muted-foreground">
+            Discover {displayProfiles.length} members in the community
+          </p>
         </div>
       </div>
 
@@ -89,25 +221,25 @@ export default function Directory() {
       <div className="space-y-4 sticky top-0 bg-background/95 backdrop-blur-md z-30 py-4 -mx-4 px-4 md:static md:p-0 md:bg-transparent">
         <div className="relative">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by name, role, or skill..." 
+          <Input
+            placeholder="Search by name, role, or skill..."
             className="pl-10 h-12 rounded-xl bg-card border-border shadow-sm focus:ring-2 focus:ring-primary/20"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        
+
         {/* Horizontal Scroll Tags */}
         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          <Button 
-            variant={selectedTag === null ? "default" : "outline"} 
+          <Button
+            variant={selectedTag === null ? "default" : "outline"}
             size="sm"
             onClick={() => setSelectedTag(null)}
             className="rounded-full"
           >
             All
           </Button>
-          {allTags.map(tag => (
+          {allTags.map((tag) => (
             <Button
               key={tag}
               variant={selectedTag === tag ? "default" : "outline"}
@@ -123,59 +255,129 @@ export default function Directory() {
 
       {/* Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredUsers.map((user, index) => (
+        {filteredUsers.map((profile, index) => (
           <motion.div
-            key={user.id}
+            key={profile.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
+            transition={{ delay: index * 0.05 }}
             className="group relative bg-card rounded-2xl p-5 border border-border shadow-sm hover:shadow-md transition-all hover:-translate-y-1 flex flex-col h-full"
           >
             <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                   <img src={user.image} alt={user.name} className="w-14 h-14 rounded-full object-cover border-2 border-white dark:border-gray-800 shadow-sm" />
-                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
+              <Link href={`/profile/${profile.id}`}>
+                <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
+                  <div className="relative">
+                    <Avatar className="w-14 h-14 border-2 border-white dark:border-gray-800 shadow-sm">
+                      <AvatarImage
+                        src={profile.avatar_url || undefined}
+                        alt={profile.name || ""}
+                      />
+                      <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                        {getInitials(profile.name || "?")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg leading-tight hover:text-primary transition-colors">
+                      {profile.name}
+                    </h3>
+                    <p className="text-sm text-primary font-medium">
+                      {profile.role || "Member"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-lg leading-tight">{user.name}</h3>
-                  <p className="text-sm text-primary font-medium">{user.role}</p>
-                </div>
-              </div>
+              </Link>
             </div>
-            
-            <p className="text-muted-foreground text-sm mb-4 line-clamp-2 flex-grow">{user.bio}</p>
-            
+
+            <p className="text-muted-foreground text-sm mb-4 line-clamp-2 flex-grow">
+              {profile.bio || "No bio yet."}
+            </p>
+
             <div className="flex flex-wrap gap-2 mb-4">
-              {user.tags.map(tag => (
-                <Badge key={tag} variant="secondary" className="bg-muted text-muted-foreground text-[10px] px-2 py-0.5 pointer-events-none">
+              {(profile.tags || []).map((tag) => (
+                <Badge
+                  key={tag}
+                  variant="secondary"
+                  className="bg-muted text-muted-foreground text-[10px] px-2 py-0.5 pointer-events-none"
+                >
                   {tag}
                 </Badge>
               ))}
             </div>
-            
-            <div className="pt-4 border-t border-border flex justify-between items-center mt-auto">
-              <div className="flex gap-2">
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted text-muted-foreground hover:text-primary">
-                  <Linkedin className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted text-muted-foreground hover:text-primary">
-                  <Twitter className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted text-muted-foreground hover:text-primary">
-                  <Globe className="h-4 w-4" />
-                </Button>
+
+            <div className="pt-4 border-t border-border space-y-3 mt-auto">
+              {/* Social Links - 3x2 grid layout */}
+              <div className="flex justify-center">
+                <SocialLinksDisplay
+                  links={migrateOldSocialLinks(profile.social_links)}
+                  maxDisplay={6}
+                  size="sm"
+                  layout="grid"
+                />
               </div>
-              <Button size="sm" className="rounded-full text-xs h-8 px-4">Connect</Button>
+
+              {/* Connection Button - below social links */}
+              <div className="flex justify-center">
+                {(() => {
+                  const status = getConnectionStatus(profile.id!);
+                  const isMe = profile.id === user?.id;
+
+                  if (isMe) {
+                    return (
+                      <Button size="sm" className="rounded-full text-xs h-8 px-4" disabled>
+                        You
+                      </Button>
+                    );
+                  }
+
+                  if (status === "connected") {
+                    return (
+                      <Button size="sm" variant="secondary" className="rounded-full text-xs h-8 px-4" disabled>
+                        <UserCheck className="h-3 w-3 mr-1" />
+                        Connected
+                      </Button>
+                    );
+                  }
+
+                  if (status === "pending") {
+                    return (
+                      <Button size="sm" variant="outline" className="rounded-full text-xs h-8 px-4" disabled>
+                        <Clock className="h-3 w-3 mr-1" />
+                        Pending
+                      </Button>
+                    );
+                  }
+
+                  return (
+                    <Button
+                      size="sm"
+                      className="rounded-full text-xs h-8 px-4 hover:scale-105 hover:shadow-md hover:brightness-110 transition-all"
+                      onClick={() => handleConnect(profile.id!)}
+                    >
+                      <UserPlus className="h-3 w-3 mr-1" />
+                      Connect
+                    </Button>
+                  );
+                })()}
+              </div>
             </div>
           </motion.div>
         ))}
       </div>
-      
+
       {filteredUsers.length === 0 && (
         <div className="text-center py-20 text-muted-foreground">
           <p>No members found matching your criteria.</p>
-          <Button variant="link" onClick={() => {setSearchTerm(""); setSelectedTag(null);}}>Clear filters</Button>
+          <Button
+            variant="link"
+            onClick={() => {
+              setSearchTerm("");
+              setSelectedTag(null);
+            }}
+          >
+            Clear filters
+          </Button>
         </div>
       )}
     </div>

@@ -1,108 +1,291 @@
-# Co:Lab Connect - Application Blueprint & Functional Spec
+# Co:Lab Connect - Claude Code Reference
 
-## 1. Project Overview
-**App Name:** Co:Lab Connect
-**Purpose:** A progressive web app (PWA) for the Co:Lab community in Pensacola, FL, allowing entrepreneurs and investors to connect, chat, and discover each other.
-**Current State:** Frontend Mockup (React, Vite, Tailwind).
-**Goal:** Transition to a fully functional full-stack application.
+Essential context for AI-assisted development on this codebase.
 
-## 2. Tech Stack
-- **Frontend:** React, TypeScript, Wouter (Routing), Tailwind CSS v4, Lucide Icons, Shadcn/UI (modified).
-- **Backend (Target):** Node.js, Express, PostgreSQL (Drizzle ORM).
-- **Authentication:** Passport.js (Local + OAuth potentially).
+## Quick Start
 
-## 3. Navigation & Layout
-- **Responsive Shell:**
-  - **Mobile:** Bottom navigation bar with icons (Home, Directory, Chat). Theme toggle in top header. AI Helper is a floating action button or nav item.
-  - **Desktop:** Left-side vertical sidebar navigation.
-- **Theme Toggle:**
-  - Located in the header (mobile) or sidebar (desktop).
-  - Toggles between 'light' and 'dark' class on `<html>` element.
-  - Persists preference to `localStorage`.
+```bash
+npm run dev     # Start dev server (frontend + backend on port 5000)
+npm run build   # Production build
+npm start       # Run production server
+```
 
-## 4. Screen Specifications
+## Architecture Overview
 
-### A. Home Screen (`/`)
-- **Hero Section:**
-  - **Visual:** Colorful abstract graphic, welcome text.
-  - **Data:** Dynamic "Active Members" count (future).
-- **Primary Actions:**
-  - **"Join the Community" (Scan QR):**
-    - **Current Behavior:** Navigates to `/create-card`.
-    - **Target Behavior:** Should open camera to scan a physical QR code at the building reception, which contains a unique invite token, then redirect to registration.
-  - **"Browse People":**
-    - **Behavior:** Navigates to `/directory`.
-- **Trending Topics:**
-  - **UI:** Horizontal scroll list of tags (e.g., #Hiring, #Events).
-  - **Behavior:** Clicking a tag navigates to `/chat` with that topic pre-selected.
+**Monorepo Structure**: Single package.json at root manages both client and server.
 
-### B. Create Card / Registration (`/create-card`)
-- **Purpose:** Onboarding for new users.
-- **Form Fields:**
-  - **Profile Photo:** Upload widget (needs S3/Blob storage integration).
-  - **Name:** Text input.
-  - **Role/Title:** Text input.
-  - **Bio:** Textarea (max 280 chars).
-  - **Specialty Tags:** Comma-separated input converted to array (e.g., "Fintech, Design").
-  - **Social Links:** LinkedIn, Website, Instagram.
-- **Submission Logic:**
-  - **Current:** Mock redirect to Directory.
-  - **Target:** POST to `/api/register`. Create User record. Store auth credentials.
+```
+/client          → React frontend (Vite)
+/server          → Express backend (tsx)
+/public          → Static assets & PWA manifest
+```
 
-### C. People Directory (`/directory`)
-- **Search & Filter:**
-  - **Search Bar:** Real-time text filter against Name, Role, and Tags.
-  - **Filter Chips:** Horizontal list of unique tags derived from the user base.
-- **User Cards:**
-  - **Display:** Avatar, Name, Role, Bio snippet, Tags.
-  - **Actions:**
-    - **Connect:** Sends a connection request or direct message (needs backend `FriendRequest` table).
-    - **Social Icons:** Open external links.
-- **Data Source:** Currently mock `USERS` array. Needs `GET /api/users` with pagination.
+**Key Technologies**:
+- Frontend: React 19, TypeScript, Vite 7, Tailwind v4, Wouter, TanStack Query
+- Backend: Express, Supabase (DB/Auth/Storage/Realtime), OpenRouter AI
+- UI: Shadcn/UI components in `/client/src/components/ui/`
 
-### D. Topics & Chat (`/chat`)
-- **Structure:**
-  - **Topic List:** Sidebar or top bar (General, Hiring, Fundraising, Tech).
-  - **Message Area:** Scrollable list of messages.
-- **Features:**
-  - **Real-time:** Needs WebSocket (Socket.io) implementation for live chat.
-  - **History:** Persist messages in PostgreSQL `messages` table linked to `topics` and `users`.
-  - **Input:** Text field with send button.
-- **State:** Currently local React state (resets on refresh).
+## Database Schema (Supabase)
 
-### E. AI Helper (Floating Action Button)
-- **UI:** Slide-over sheet (mobile) or sidebar panel.
-- **Functionality:**
-  - **Chat Interface:** User asks questions ("Who is an investor?").
-  - **Logic:**
-    - **Current:** Mock setTimeout response.
-    - **Target:** RAG (Retrieval-Augmented Generation) system.
-      1. Embed user profiles and chat history into a vector database (e.g., pgvector).
-      2. On query, retrieve relevant context.
-      3. Send context + query to LLM (OpenAI/Anthropic).
-      4. Return answer: "I found 3 investors: Marcus Johnson, ..."
+### Core Tables
 
-## 5. Backend Requirements (To Be Built)
-1.  **Database Schema:**
-    - `users` (id, name, email, password_hash, role, bio, tags[], social_links{})
-    - `topics` (id, slug, name)
-    - `messages` (id, topic_id, user_id, content, created_at)
-    - `connections` (follower_id, following_id, status)
-2.  **API Endpoints:**
-    - Auth: `/api/login`, `/api/logout`, `/api/register`
-    - Users: `/api/users` (GET, search), `/api/users/:id` (GET, PUT)
-    - Chat: `/api/topics`, `/api/messages/:topicId`
-3.  **WebSockets:**
-    - Handle `join_room`, `send_message`, `receive_message` events.
+**profiles** (extends auth.users)
+```sql
+id UUID PRIMARY KEY REFERENCES auth.users(id)
+name TEXT NOT NULL
+email TEXT UNIQUE
+role TEXT                    -- "Entrepreneur", "Investor", etc.
+company TEXT
+bio TEXT
+avatar_url TEXT
+tags TEXT[]                  -- ["Fintech", "Design", "AI"]
+social_links JSONB           -- Array of {id, type, url, order}
+phone TEXT
+show_email BOOLEAN DEFAULT true
+show_phone BOOLEAN DEFAULT false
+created_at, updated_at TIMESTAMPTZ
+```
 
-## 6. Design System Tokens
-- **Colors:** defined in `index.css` (HSL values).
-  - Primary: Teal (`--primary`)
-  - Secondary: Coral (`--secondary`)
-  - Background: Slate (`--background`)
-- **Typography:**
-  - Headings: `Outfit`
-  - Body: `DM Sans`
+**messages** (group chat)
+```sql
+id UUID PRIMARY KEY
+topic_id UUID REFERENCES topics(id)
+user_id UUID REFERENCES profiles(id)
+content TEXT
+created_at TIMESTAMPTZ
+```
 
----
-*Generated by Replit Agent for Claude Code Opus 4.5*
+**private_messages** (DMs)
+```sql
+id UUID PRIMARY KEY
+sender_id UUID REFERENCES profiles(id)
+receiver_id UUID REFERENCES profiles(id)
+content TEXT
+read_at TIMESTAMPTZ          -- NULL = unread
+created_at TIMESTAMPTZ
+```
+
+**connections** (follow/connect system)
+```sql
+id UUID PRIMARY KEY
+follower_id UUID             -- User sending request
+following_id UUID            -- User receiving request
+status TEXT                  -- 'pending' | 'accepted' | 'rejected'
+created_at TIMESTAMPTZ
+```
+
+**topics** (chat rooms)
+```sql
+id UUID PRIMARY KEY
+slug TEXT UNIQUE             -- 'general', 'hiring', etc.
+name TEXT
+icon TEXT                    -- emoji
+description TEXT
+```
+
+## File Reference
+
+### Pages (`/client/src/pages/`)
+
+| File | Route | Purpose |
+|------|-------|---------|
+| `Home.tsx` | `/` | Landing page with hero, trending topics |
+| `Login.tsx` | `/login` | Email/password + Google OAuth |
+| `Directory.tsx` | `/directory` | Member grid with search/filter |
+| `Chat.tsx` | `/chat` | Group topics + private DMs |
+| `MyProfile.tsx` | `/my-profile` | Current user's profile view |
+| `UserProfile.tsx` | `/profile/:id` | Other user's profile |
+| `EditProfile.tsx` | `/profile/edit` | Profile editor form |
+| `CreateProfile.tsx` | `/create-card` | New user onboarding |
+| `Connections.tsx` | `/connections` | Pending/accepted connections |
+
+### Key Components
+
+| File | Purpose |
+|------|---------|
+| `Layout.tsx` | App shell - sidebar nav, bottom nav, theme toggle |
+| `AIHelper.tsx` | Floating AI chat assistant |
+| `SocialLinksEditor.tsx` | Drag-drop social link management |
+| `ImageCropDialog.tsx` | Avatar upload with crop |
+| `QRCodeButton.tsx` | Profile QR code generator |
+| `NotificationSettings.tsx` | Push notification preferences |
+| `PWAInstallPrompt.tsx` | PWA install banner |
+
+### Core Libraries
+
+| File | Purpose |
+|------|---------|
+| `lib/supabase.ts` | Supabase client + type exports |
+| `lib/utils.ts` | Social platform config, helpers |
+| `contexts/AuthContext.tsx` | Auth state + profile caching |
+| `hooks/usePushNotifications.ts` | Web Push subscription logic |
+
+### Server (`/server/`)
+
+| File | Purpose |
+|------|---------|
+| `index.ts` | Express entry, Vite middleware |
+| `routes.ts` | API endpoints (AI, push, account) |
+| `pushNotifications.ts` | Web Push sending logic |
+
+## Common Patterns
+
+### Auth Context Usage
+```tsx
+const { user, profile, signOut, loading } = useAuth();
+// user = Supabase auth user
+// profile = profiles table row (cached in localStorage)
+```
+
+### Supabase Queries
+```tsx
+// Client-side (with anon key)
+import { supabase } from "@/lib/supabase";
+const { data } = await supabase.from("profiles").select("*");
+
+// Server-side (with service role key) - in /server/routes.ts
+const supabase = createClient(url, serviceRoleKey);
+await supabase.auth.admin.deleteUser(userId);
+```
+
+### Real-time Subscriptions
+```tsx
+const channel = supabase
+  .channel("messages")
+  .on("postgres_changes", {
+    event: "INSERT",
+    schema: "public",
+    table: "messages",
+    filter: `topic_id=eq.${topicId}`,
+  }, (payload) => {
+    // Handle new message
+  })
+  .subscribe();
+```
+
+### TanStack Query Pattern
+```tsx
+const { data, isLoading } = useQuery({
+  queryKey: ["profiles"],
+  queryFn: async () => {
+    const { data } = await supabase.from("profiles").select("*");
+    return data;
+  },
+});
+```
+
+## Social Links System
+
+Stored in `profiles.social_links` as JSONB array:
+```typescript
+interface SocialLink {
+  id: string;        // UUID
+  type: SocialPlatformType;  // 'linkedin' | 'twitter' | 'instagram' | etc.
+  url: string;
+  order: number;     // For drag-drop ordering
+}
+```
+
+Supported platforms defined in `lib/utils.ts`:
+- linkedin, twitter, instagram, github, youtube, spotify, facebook, dribbble, behance, website
+
+## Environment Variables
+
+```env
+# Required - Supabase
+VITE_SUPABASE_URL=https://xxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...  # Server-side only
+
+# Optional - AI
+OPENROUTER_API_KEY=sk-or-...
+
+# Optional - Push Notifications
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+```
+
+## Styling Conventions
+
+- **Tailwind v4** with CSS variables for theming
+- Color tokens in `/client/src/index.css`: `--primary`, `--secondary`, `--background`
+- Fonts: `Outfit` (headings), `DM Sans` (body)
+- Dark mode: Toggle adds `dark` class to `<html>`
+
+### Common Classes
+```tsx
+// Hover effects pattern
+className="hover:scale-105 hover:shadow-lg hover:brightness-110 transition-all"
+
+// Card styling
+className="rounded-2xl border border-border shadow-sm"
+
+// Button with ring focus
+className="rounded-full focus:ring-2 focus:ring-primary/20"
+```
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/ai/chat` | POST | AI assistant chat (Gemini via OpenRouter) |
+| `/api/push/subscribe` | POST | Subscribe to push notifications |
+| `/api/push/unsubscribe` | POST | Unsubscribe from notifications |
+| `/api/notify/dm` | POST | Send DM notification |
+| `/api/notify/connection` | POST | Send connection request notification |
+| `/api/account` | DELETE | Delete user account (requires service role) |
+
+## Common Tasks
+
+### Add new page
+1. Create component in `/client/src/pages/NewPage.tsx`
+2. Add route in `/client/src/App.tsx`
+3. Optionally add nav link in `/client/src/components/Layout.tsx`
+
+### Add API endpoint
+1. Add handler in `/server/routes.ts`
+2. Call from frontend using fetch or add to TanStack Query
+
+### Add UI component
+1. Use existing Shadcn components from `/client/src/components/ui/`
+2. Or add new via: `npx shadcn-ui@latest add [component]`
+
+### Modify profile fields
+1. Update Supabase table (SQL or dashboard)
+2. Update `Profile` interface in `/client/src/lib/supabase.ts`
+3. Update relevant forms and display components
+
+## Known Gotchas
+
+1. **Profile caching**: Auth context caches profile in localStorage. Clear with `localStorage.removeItem("colab_profile_cache")` when debugging
+
+2. **Service role key**: Required for admin operations (delete user). Never expose client-side.
+
+3. **Avatar storage**: Uses Supabase Storage bucket `avatars`. URLs include cache-busting query param.
+
+4. **Social links migration**: Old format was object `{linkedin: "url"}`, new is array. `migrateOldSocialLinks()` in utils.ts handles conversion.
+
+5. **Push notifications**: Require HTTPS in production. VAPID keys generated once and reused.
+
+## Supabase Project
+
+- **URL**: `https://oyneqfcajnioyipoixix.supabase.co`
+- **Region**: us-east-1
+
+## Design System
+
+- **Primary**: Teal (`--primary` in HSL)
+- **Secondary**: Coral (`--secondary`)
+- **Typography**: Outfit (headings), DM Sans (body)
+- **Border Radius**: Generally `rounded-xl` or `rounded-2xl`
+- **Shadows**: `shadow-sm` for cards, `shadow-lg` on hover
+
+## Testing Considerations
+
+- No test framework currently configured
+- Key flows to test:
+  1. Auth (signup, login, logout, OAuth callback)
+  2. Profile CRUD (create, edit, delete account)
+  3. Connections (send, accept, reject)
+  4. Chat (messages, DMs, realtime)
+  5. Push notifications (subscribe, receive)
