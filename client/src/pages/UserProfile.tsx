@@ -76,31 +76,33 @@ export default function UserProfile() {
     enabled: !!id,
   });
 
-  // Check connection status
+  // Check connection status - get ALL connections between these two users
   const { data: connectionStatus } = useQuery({
     queryKey: ["connection-status", user?.id, id],
     queryFn: async () => {
       if (!user) return null;
 
-      // Check if we sent a request to them
-      const { data: sentRequest } = await supabase
+      // Get all connections between these two users (in either direction)
+      const { data: connections } = await supabase
         .from("connections")
         .select("*")
-        .eq("follower_id", user.id)
-        .eq("following_id", id)
-        .maybeSingle();
+        .or(`and(follower_id.eq.${user.id},following_id.eq.${id}),and(follower_id.eq.${id},following_id.eq.${user.id})`);
 
-      if (sentRequest) return { type: "sent", connection: sentRequest };
+      if (!connections || connections.length === 0) return null;
 
-      // Check if they sent a request to us
-      const { data: receivedRequest } = await supabase
-        .from("connections")
-        .select("*")
-        .eq("follower_id", id)
-        .eq("following_id", user.id)
-        .maybeSingle();
+      // If ANY connection is accepted, return that one (handles duplicates)
+      const acceptedConnection = connections.find(c => c.status === "accepted");
+      if (acceptedConnection) {
+        const type = acceptedConnection.follower_id === user.id ? "sent" : "received";
+        return { type, connection: acceptedConnection };
+      }
 
-      if (receivedRequest) return { type: "received", connection: receivedRequest };
+      // Otherwise return the first pending connection
+      const pendingConnection = connections.find(c => c.status === "pending");
+      if (pendingConnection) {
+        const type = pendingConnection.follower_id === user.id ? "sent" : "received";
+        return { type, connection: pendingConnection };
+      }
 
       return null;
     },

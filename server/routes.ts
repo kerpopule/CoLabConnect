@@ -638,5 +638,70 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // Profile Reminder Notifications
+  // ============================================
+
+  // Trigger incomplete profile reminders (call daily via cron or manually)
+  app.post("/api/notify/profile-reminders", async (req, res) => {
+    try {
+      const { sendIncompleteProfileReminders } = await import("./pushNotifications");
+      const result = await sendIncompleteProfileReminders();
+      log(`Profile reminders sent: ${result.sent}, errors: ${result.errors.length}`);
+      res.json(result);
+    } catch (error: any) {
+      log(`Profile reminder error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================
+  // Daily Scheduler for Profile Reminders
+  // ============================================
+
+  // Schedule daily profile reminder at 10 AM local server time
+  const scheduleProfileReminders = () => {
+    const now = new Date();
+    const targetHour = 10; // 10 AM
+
+    // Calculate time until next 10 AM
+    let next10AM = new Date(now);
+    next10AM.setHours(targetHour, 0, 0, 0);
+
+    // If it's already past 10 AM today, schedule for tomorrow
+    if (now > next10AM) {
+      next10AM.setDate(next10AM.getDate() + 1);
+    }
+
+    const msUntilNext = next10AM.getTime() - now.getTime();
+
+    log(`Profile reminders scheduled for ${next10AM.toLocaleString()} (in ${Math.round(msUntilNext / 1000 / 60)} minutes)`);
+
+    // Set timeout for first run
+    setTimeout(async () => {
+      try {
+        const { sendIncompleteProfileReminders } = await import("./pushNotifications");
+        const result = await sendIncompleteProfileReminders();
+        log(`Daily profile reminders sent: ${result.sent}, errors: ${result.errors.length}`);
+      } catch (error: any) {
+        log(`Daily profile reminder error: ${error.message}`);
+      }
+
+      // Then set interval for every 24 hours
+      setInterval(async () => {
+        try {
+          const { sendIncompleteProfileReminders } = await import("./pushNotifications");
+          const result = await sendIncompleteProfileReminders();
+          log(`Daily profile reminders sent: ${result.sent}, errors: ${result.errors.length}`);
+        } catch (error: any) {
+          log(`Daily profile reminder error: ${error.message}`);
+        }
+      }, 24 * 60 * 60 * 1000); // 24 hours
+    }, msUntilNext);
+  };
+
+  // Start the scheduler
+  scheduleProfileReminders();
+
   return httpServer;
 }

@@ -1,6 +1,6 @@
 // Co:Lab Connect Service Worker for Push Notifications
 
-const CACHE_NAME = 'colab-connect-v17';
+const CACHE_NAME = 'colab-connect-v18';
 
 // Install event - cache essential files
 self.addEventListener('install', (event) => {
@@ -66,6 +66,8 @@ self.addEventListener('notificationclick', (event) => {
     url = `/profile/${data.senderId}`;
   } else if (data.type === 'chat') {
     url = `/chat`;
+  } else if (data.type === 'profile') {
+    url = `/profile/edit`;
   } else if (data.url) {
     url = data.url;
   }

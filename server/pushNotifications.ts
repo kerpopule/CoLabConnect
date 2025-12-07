@@ -31,7 +31,7 @@ interface NotificationPayload {
   tag?: string;
   requireInteraction?: boolean;
   data?: {
-    type: "dm" | "connection" | "chat";
+    type: "dm" | "connection" | "chat" | "profile";
     senderId?: string;
     senderName?: string;
     topicId?: string;
@@ -244,4 +244,74 @@ export async function notifyReaction(
       url: `/chat?dm=${senderId}`,
     },
   });
+}
+
+// Send reminder notification for incomplete profiles
+export async function notifyIncompleteProfile(userId: string): Promise<void> {
+  await sendPushNotification(userId, {
+    title: "Complete Your Co:Lab Profile",
+    body: "Add a photo, role, and bio to help others connect with you!",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: "profile-reminder",
+    requireInteraction: false,
+    data: {
+      type: "profile",
+      url: "/profile/edit",
+    },
+    actions: [
+      { action: "complete", title: "Complete Now" },
+      { action: "dismiss", title: "Later" },
+    ],
+  });
+}
+
+// Check and send reminders to users with incomplete profiles who have push notifications enabled
+export async function sendIncompleteProfileReminders(): Promise<{ sent: number; errors: string[] }> {
+  const errors: string[] = [];
+  let sent = 0;
+
+  try {
+    // Get all users who have push subscriptions (meaning they have notifications enabled)
+    const { data: usersWithPush, error: subError } = await supabase
+      .from("push_subscriptions")
+      .select("user_id")
+      .order("user_id");
+
+    if (subError || !usersWithPush || usersWithPush.length === 0) {
+      return { sent: 0, errors: subError ? [subError.message] : [] };
+    }
+
+    // Get unique user IDs
+    const uniqueUserIds = [...new Set(usersWithPush.map(s => s.user_id))];
+
+    // For each user, check if their profile is incomplete
+    for (const userId of uniqueUserIds) {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, avatar_url, role, bio")
+        .eq("id", userId)
+        .single();
+
+      if (profileError || !profile) {
+        continue;
+      }
+
+      // Profile is incomplete if missing avatar, role, OR bio
+      const isIncomplete = !profile.avatar_url || !profile.role || !profile.bio;
+
+      if (isIncomplete) {
+        try {
+          await notifyIncompleteProfile(userId);
+          sent++;
+        } catch (err: any) {
+          errors.push(`Failed to notify ${userId}: ${err.message}`);
+        }
+      }
+    }
+
+    return { sent, errors };
+  } catch (err: any) {
+    return { sent, errors: [err.message] };
+  }
 }
