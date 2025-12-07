@@ -10,7 +10,10 @@ import {
 } from "@/components/ui/popover";
 
 // Common emoji reactions like iMessage
-const QUICK_EMOJIS = ["❤️", "👍", "👎", "😂", "😮", "😢"];
+const QUICK_EMOJIS = [
+  ["❤️", "👍", "👎", "😂", "😮"],
+  ["😢", "👋", "😠", "🤷", "😎"],
+];
 
 interface Reaction {
   id: string;
@@ -231,15 +234,19 @@ export function EmojiReactions({ messageId, messageType, messageSenderId, onReac
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-2" align="start">
-          <div className="flex gap-1">
-            {QUICK_EMOJIS.map(emoji => (
-              <button
-                key={emoji}
-                onClick={() => toggleReaction(emoji)}
-                className="w-8 h-8 flex items-center justify-center text-lg rounded hover:bg-muted transition-colors"
-              >
-                {emoji}
-              </button>
+          <div className="flex flex-col gap-1">
+            {QUICK_EMOJIS.map((row, rowIndex) => (
+              <div key={rowIndex} className="flex gap-1">
+                {row.map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => toggleReaction(emoji)}
+                    className="w-8 h-8 flex items-center justify-center text-lg rounded hover:bg-muted transition-colors"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </PopoverContent>
@@ -289,15 +296,19 @@ export function AddReactionButton({ messageId, messageType }: { messageId: strin
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-2" align="end">
-        <div className="flex gap-1">
-          {QUICK_EMOJIS.map(emoji => (
-            <button
-              key={emoji}
-              onClick={() => addReaction(emoji)}
-              className="w-8 h-8 flex items-center justify-center text-lg rounded hover:bg-muted transition-colors"
-            >
-              {emoji}
-            </button>
+        <div className="flex flex-col gap-1">
+          {QUICK_EMOJIS.map((row, rowIndex) => (
+            <div key={rowIndex} className="flex gap-1">
+              {row.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => addReaction(emoji)}
+                  className="w-8 h-8 flex items-center justify-center text-lg rounded hover:bg-muted transition-colors"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       </PopoverContent>
