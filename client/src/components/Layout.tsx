@@ -126,7 +126,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const isChatPage = location === "/chat";
 
   return (
-    <div className={`bg-background flex flex-col pb-20 md:pb-0 font-sans ${isChatPage ? "h-screen overflow-hidden" : "min-h-screen"}`}>
+    <div className={`bg-background flex flex-col pb-20 md:pb-0 font-sans ${isChatPage ? "h-dvh overflow-hidden fixed inset-0 md:relative md:h-screen" : "min-h-screen"}`}>
       {/* Mobile Top Bar - only show on profile page */}
       {(location === "/my-profile" || location === "/profile/edit") && (
         <header className="md:hidden flex justify-end items-center p-4 fixed top-0 left-0 right-0 z-50">

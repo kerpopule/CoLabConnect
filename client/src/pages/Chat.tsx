@@ -347,11 +347,19 @@ export default function Chat() {
     return () => viewport.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
-  // Scroll to bottom function
+  // Scroll to bottom function - uses scrollTop to prevent outer window scroll
   const scrollToBottom = useCallback((smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: smooth ? "smooth" : "auto"
-    });
+    const viewport = scrollViewportRef.current;
+    if (viewport) {
+      if (smooth) {
+        viewport.scrollTo({
+          top: viewport.scrollHeight,
+          behavior: "smooth"
+        });
+      } else {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
+    }
     setShowScrollButton(false);
     setIsAtBottom(true);
   }, []);
@@ -361,7 +369,13 @@ export default function Chat() {
     // Use setTimeout to ensure DOM has updated
     setTimeout(() => {
       if (isAtBottom) {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        const viewport = scrollViewportRef.current;
+        if (viewport) {
+          viewport.scrollTo({
+            top: viewport.scrollHeight,
+            behavior: "smooth"
+          });
+        }
       }
     }, 100);
   }, [messages, privateMessages, aiMessages, isAtBottom]);

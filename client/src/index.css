@@ -165,22 +165,41 @@
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
-/* Fix for iOS virtual keyboard */
-@supports (-webkit-touch-callout: none) {
+/* Dynamic viewport height for mobile - accounts for browser chrome */
+.h-dvh {
+  height: 100dvh;
+  height: 100vh; /* Fallback for browsers without dvh support */
+}
+
+@supports (height: 100dvh) {
   .h-dvh {
     height: 100dvh;
   }
 }
 
-/* Chat input should stay visible when keyboard is open */
+/* Mobile layout - prevent outer scrolling */
 @media (max-width: 768px) {
   html, body {
     height: 100%;
+    height: 100dvh;
     overflow: hidden;
+    position: fixed;
+    width: 100%;
   }
 
   #root {
     height: 100%;
-    overflow: auto;
+    height: 100dvh;
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    top: 0;
+    left: 0;
+  }
+
+  /* Only allow scrolling within specific containers */
+  .mobile-scroll-container {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
