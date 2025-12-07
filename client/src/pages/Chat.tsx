@@ -11,6 +11,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import ReactMarkdown from "react-markdown";
 import { useTopicFollow, usePushNotifications } from "@/hooks/usePushNotifications";
 import { NotificationEnableButton, NotificationPrompt, useDmNotificationPrompt } from "@/components/NotificationPrompt";
+import { MessageContextMenu, DeletedMessage, EditedIndicator } from "@/components/MessageContextMenu";
 
 type AIMessage = {
   id: string;
@@ -626,6 +627,110 @@ export default function Chat() {
     },
   });
 
+  // Edit public message
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    const { error } = await supabase
+      .from("messages")
+      .update({
+        content: newContent,
+        edited_at: new Date().toISOString(),
+      })
+      .eq("id", messageId)
+      .eq("user_id", user?.id); // Only allow editing own messages
+
+    if (error) throw error;
+
+    // Update local cache
+    if (activeTopic) {
+      queryClient.setQueryData<MessageWithProfile[]>(
+        ["messages", activeTopic],
+        (old) => old?.map(m =>
+          m.id === messageId
+            ? { ...m, content: newContent, edited_at: new Date().toISOString() }
+            : m
+        ) || []
+      );
+    }
+  };
+
+  // Delete public message (soft delete)
+  const handleDeleteMessage = async (messageId: string) => {
+    const { error } = await supabase
+      .from("messages")
+      .update({
+        deleted_at: new Date().toISOString(),
+        content: "", // Clear content on delete
+      })
+      .eq("id", messageId)
+      .eq("user_id", user?.id); // Only allow deleting own messages
+
+    if (error) throw error;
+
+    // Update local cache
+    if (activeTopic) {
+      queryClient.setQueryData<MessageWithProfile[]>(
+        ["messages", activeTopic],
+        (old) => old?.map(m =>
+          m.id === messageId
+            ? { ...m, deleted_at: new Date().toISOString(), content: "" }
+            : m
+        ) || []
+      );
+    }
+  };
+
+  // Edit private message
+  const handleEditPrivateMessage = async (messageId: string, newContent: string) => {
+    const { error } = await supabase
+      .from("private_messages")
+      .update({
+        content: newContent,
+        edited_at: new Date().toISOString(),
+      })
+      .eq("id", messageId)
+      .eq("sender_id", user?.id); // Only allow editing own messages
+
+    if (error) throw error;
+
+    // Update local cache
+    if (user && activeDm) {
+      queryClient.setQueryData<PrivateMessage[]>(
+        ["private-messages", user.id, activeDm],
+        (old) => old?.map(m =>
+          m.id === messageId
+            ? { ...m, content: newContent, edited_at: new Date().toISOString() }
+            : m
+        ) || []
+      );
+    }
+  };
+
+  // Delete private message (soft delete)
+  const handleDeletePrivateMessage = async (messageId: string) => {
+    const { error } = await supabase
+      .from("private_messages")
+      .update({
+        deleted_at: new Date().toISOString(),
+        content: "", // Clear content on delete
+      })
+      .eq("id", messageId)
+      .eq("sender_id", user?.id); // Only allow deleting own messages
+
+    if (error) throw error;
+
+    // Update local cache
+    if (user && activeDm) {
+      queryClient.setQueryData<PrivateMessage[]>(
+        ["private-messages", user.id, activeDm],
+        (old) => old?.map(m =>
+          m.id === messageId
+            ? { ...m, deleted_at: new Date().toISOString(), content: "" }
+            : m
+        ) || []
+      );
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -1112,7 +1217,10 @@ export default function Chat() {
                   : msg.profiles;
                 const senderName = senderProfile?.name || "Unknown";
 
-                return (
+                const isDeleted = !!msg.deleted_at;
+                const isEdited = !!msg.edited_at && !isDeleted;
+
+                const messageContent = (
                   <div
                     key={msg.id}
                     className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}
@@ -1144,19 +1252,41 @@ export default function Chat() {
                         <span className="text-[10px] text-muted-foreground">
                           {formatTime(msg.created_at)}
                         </span>
+                        {isEdited && <EditedIndicator />}
                       </div>
                       <div
                         className={`p-3 rounded-2xl text-sm ${
-                          isOwn
+                          isDeleted
+                            ? "bg-muted/50 text-muted-foreground border border-border/50 italic"
+                            : isOwn
                             ? "bg-primary/10 text-foreground rounded-tr-none border border-primary/20"
                             : "bg-muted text-foreground rounded-tl-none border border-border"
                         }`}
                       >
-                        {msg.content}
+                        {isDeleted ? <DeletedMessage /> : msg.content}
                       </div>
                     </div>
                   </div>
                 );
+
+                // Wrap own messages in context menu (for edit/delete)
+                if (isOwn && !isDeleted) {
+                  return (
+                    <MessageContextMenu
+                      key={msg.id}
+                      messageId={msg.id}
+                      content={msg.content}
+                      isOwnMessage={isOwn}
+                      isDeleted={isDeleted}
+                      onEdit={isPrivateChat ? handleEditPrivateMessage : handleEditMessage}
+                      onDelete={isPrivateChat ? handleDeletePrivateMessage : handleDeleteMessage}
+                    >
+                      {messageContent}
+                    </MessageContextMenu>
+                  );
+                }
+
+                return messageContent;
               })
             ) : (
               <div className="text-center py-8 text-muted-foreground">

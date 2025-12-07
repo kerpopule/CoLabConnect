@@ -367,11 +367,13 @@ export default function UserProfile() {
 
           {isOwnProfile && (
             <div className="flex justify-center mb-6">
-              <Link href="/profile/edit">
-                <Button variant="outline" className="rounded-full hover:scale-105 hover:shadow-md hover:bg-primary/10 hover:border-primary transition-all">
-                  Edit Profile
-                </Button>
-              </Link>
+              <Button
+                variant="outline"
+                className="rounded-full hover:scale-105 hover:shadow-md hover:bg-primary/10 hover:border-primary transition-all min-h-[44px]"
+                onClick={() => setLocation("/profile/edit")}
+              >
+                Edit Profile
+              </Button>
             </div>
           )}
 

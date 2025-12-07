@@ -53,6 +53,8 @@ export type Message = {
   user_id: string | null;
   content: string;
   created_at: string;
+  edited_at: string | null;
+  deleted_at: string | null;
   // Joined profile data
   profiles?: Profile;
 };
@@ -72,6 +74,8 @@ export type PrivateMessage = {
   content: string;
   created_at: string;
   read_at: string | null;
+  edited_at: string | null;
+  deleted_at: string | null;
   // Joined profile data
   sender_profile?: Profile;
   receiver_profile?: Profile;
