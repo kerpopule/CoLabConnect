@@ -9,7 +9,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link, useLocation, useSearch } from "wouter";
 import ReactMarkdown from "react-markdown";
-import { useTopicFollow } from "@/hooks/usePushNotifications";
+import { useTopicFollow, usePushNotifications } from "@/hooks/usePushNotifications";
+import { NotificationEnableButton, NotificationPrompt, useDmNotificationPrompt } from "@/components/NotificationPrompt";
 
 type AIMessage = {
   id: string;
@@ -72,6 +73,15 @@ export default function Chat() {
 
   // Topic follow for notifications
   const { isFollowing: isFollowingTopic, isLoading: followLoading, toggleFollow } = useTopicFollow(activeTopic);
+
+  // Push notifications state
+  const { isSubscribed: hasNotificationsEnabled } = usePushNotifications();
+
+  // DM notification prompt (weekly)
+  const { showPrompt: showDmPrompt, setShowPrompt: setShowDmPrompt, triggerPrompt: triggerDmPrompt } = useDmNotificationPrompt();
+
+  // Topic notification prompt (when clicking bell)
+  const [showTopicPrompt, setShowTopicPrompt] = useState(false);
 
   // Save AI messages to localStorage
   useEffect(() => {
@@ -287,20 +297,29 @@ export default function Chat() {
           filter: `topic_id=eq.${activeTopic}`,
         },
         async (payload) => {
+          const newMsg = payload.new as Message;
+
+          // Skip if this is from the current user (already added via optimistic update)
+          if (newMsg.user_id === user?.id) return;
+
           const { data: profileData } = await supabase
             .from("profiles")
             .select("*")
-            .eq("id", payload.new.user_id)
+            .eq("id", newMsg.user_id)
             .single();
 
           const newMessage: MessageWithProfile = {
-            ...payload.new as Message,
+            ...newMsg,
             profiles: profileData || undefined,
           };
 
           queryClient.setQueryData<MessageWithProfile[]>(
             ["messages", activeTopic],
-            (old) => [...(old || []), newMessage]
+            (old) => {
+              // Check if message already exists (by id)
+              if (old?.some(m => m.id === newMessage.id)) return old;
+              return [...(old || []), newMessage];
+            }
           );
         }
       )
@@ -309,7 +328,7 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeTopic, activeDm, queryClient]);
+  }, [activeTopic, activeDm, queryClient, user?.id]);
 
   // Real-time subscription for private messages
   useEffect(() => {
@@ -326,6 +345,9 @@ export default function Chat() {
         },
         async (payload) => {
           const newMsg = payload.new as PrivateMessage;
+
+          // Skip if this is from the current user (already added via optimistic update)
+          if (newMsg.sender_id === user.id) return;
 
           // Only add if it's between us and the active DM user
           if (
@@ -346,8 +368,15 @@ export default function Chat() {
 
             queryClient.setQueryData<PrivateMessage[]>(
               ["private-messages", user.id, activeDm],
-              (old) => [...(old || []), messageWithProfile]
+              (old) => {
+                // Check if message already exists (by id)
+                if (old?.some(m => m.id === messageWithProfile.id)) return old;
+                return [...(old || []), messageWithProfile];
+              }
             );
+
+            // Trigger DM notification prompt if user hasn't enabled notifications
+            triggerDmPrompt();
           }
         }
       )
@@ -356,7 +385,7 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, activeDm, queryClient]);
+  }, [user, activeDm, queryClient, triggerDmPrompt]);
 
   // Check if user is at or near the bottom of the scroll
   const checkIfAtBottom = useCallback(() => {
@@ -476,39 +505,124 @@ export default function Chat() {
     }
   };
 
-  // Send public message mutation
+  // Send public message mutation with optimistic update
   const sendMessage = useMutation({
     mutationFn: async (content: string) => {
       if (!user || !activeTopic) throw new Error("Not authenticated");
 
-      const { error } = await supabase.from("messages").insert({
+      const { data, error } = await supabase.from("messages").insert({
         topic_id: activeTopic,
         user_id: user.id,
         content,
-      } as any);
+      } as any).select().single();
 
       if (error) throw error;
+      return data;
     },
-    onError: (error) => {
+    onMutate: async (content: string) => {
+      // Optimistic update - add message immediately
+      if (!user || !activeTopic || !currentUserProfile) return;
+
+      const optimisticMessage: MessageWithProfile = {
+        id: `temp-${Date.now()}`,
+        topic_id: activeTopic,
+        user_id: user.id,
+        content,
+        created_at: new Date().toISOString(),
+        profiles: currentUserProfile,
+      };
+
+      // Add to cache immediately
+      queryClient.setQueryData<MessageWithProfile[]>(
+        ["messages", activeTopic],
+        (old) => [...(old || []), optimisticMessage]
+      );
+
+      return { optimisticMessage };
+    },
+    onError: (error, _content, context) => {
       console.error("Failed to send message:", error);
+      // Remove optimistic message on error
+      if (context?.optimisticMessage && activeTopic) {
+        queryClient.setQueryData<MessageWithProfile[]>(
+          ["messages", activeTopic],
+          (old) => old?.filter(m => m.id !== context.optimisticMessage.id) || []
+        );
+      }
+    },
+    onSuccess: (data, _content, context) => {
+      // Replace optimistic message with real one
+      if (context?.optimisticMessage && data && activeTopic) {
+        queryClient.setQueryData<MessageWithProfile[]>(
+          ["messages", activeTopic],
+          (old) => old?.map(m =>
+            m.id === context.optimisticMessage.id
+              ? { ...data, profiles: currentUserProfile }
+              : m
+          ) || []
+        );
+      }
     },
   });
 
-  // Send private message mutation
+  // Send private message mutation with optimistic update
   const sendPrivateMessage = useMutation({
     mutationFn: async (content: string) => {
       if (!user || !activeDm) throw new Error("Not authenticated");
 
-      const { error } = await supabase.from("private_messages").insert({
+      const { data, error } = await supabase.from("private_messages").insert({
         sender_id: user.id,
         receiver_id: activeDm,
         content,
-      } as any);
+      } as any).select().single();
 
       if (error) throw error;
+      return data;
     },
-    onError: (error) => {
+    onMutate: async (content: string) => {
+      // Optimistic update - add message immediately
+      if (!user || !activeDm || !currentUserProfile) return;
+
+      const optimisticMessage: PrivateMessage = {
+        id: `temp-${Date.now()}`,
+        sender_id: user.id,
+        receiver_id: activeDm,
+        content,
+        created_at: new Date().toISOString(),
+        read_at: null,
+        sender_profile: currentUserProfile,
+      };
+
+      // Add to cache immediately
+      queryClient.setQueryData<PrivateMessage[]>(
+        ["private-messages", user.id, activeDm],
+        (old) => [...(old || []), optimisticMessage]
+      );
+
+      return { optimisticMessage };
+    },
+    onError: (error, _content, context) => {
       console.error("Failed to send private message:", error);
+      // Remove optimistic message on error
+      if (context?.optimisticMessage && user && activeDm) {
+        queryClient.setQueryData<PrivateMessage[]>(
+          ["private-messages", user.id, activeDm],
+          (old) => old?.filter(m => m.id !== context.optimisticMessage.id) || []
+        );
+      }
+    },
+    onSuccess: (data, _content, context) => {
+      // Replace optimistic message with real one
+      if (context?.optimisticMessage && data && user && activeDm) {
+        queryClient.setQueryData<PrivateMessage[]>(
+          ["private-messages", user.id, activeDm],
+          (old) => old?.map(m =>
+            m.id === context.optimisticMessage.id
+              ? { ...data, sender_profile: currentUserProfile }
+              : m
+          ) || []
+        );
+      }
     },
   });
 
@@ -816,7 +930,14 @@ export default function Chat() {
           {/* Follow/Notify Button - only show for public topics when logged in */}
           {chatMode === "public" && user && activeTopic && (
             <button
-              onClick={toggleFollow}
+              onClick={() => {
+                // If notifications aren't enabled, show the prompt first
+                if (!hasNotificationsEnabled) {
+                  setShowTopicPrompt(true);
+                } else {
+                  toggleFollow();
+                }
+              }}
               disabled={followLoading}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
                 isFollowingTopic
@@ -834,6 +955,11 @@ export default function Chat() {
               )}
               <span className="hidden sm:inline">{isFollowingTopic ? "Following" : "Notify"}</span>
             </button>
+          )}
+
+          {/* DM Notification Button - only show for private chats when notifications not enabled */}
+          {chatMode === "private" && user && activeDm && !hasNotificationsEnabled && (
+            <NotificationEnableButton type="dm" />
           )}
 
           {/* AI Button - right side (only show when not in AI mode) */}
@@ -1099,6 +1225,19 @@ export default function Chat() {
           </form>
         </div>
       </div>
+
+      {/* Notification Prompts */}
+      <NotificationPrompt
+        open={showDmPrompt}
+        onOpenChange={setShowDmPrompt}
+        type="dm"
+      />
+      <NotificationPrompt
+        open={showTopicPrompt}
+        onOpenChange={setShowTopicPrompt}
+        type="topic"
+        topicName={currentTopic?.name}
+      />
     </div>
   );
 }
