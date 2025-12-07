@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Hash, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown } from "lucide-react";
+import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Topic, Message, Profile, PrivateMessage, getPrivateChatId } from "@/lib/supabase";
@@ -12,6 +12,9 @@ import ReactMarkdown from "react-markdown";
 import { useTopicFollow, usePushNotifications } from "@/hooks/usePushNotifications";
 import { NotificationEnableButton, NotificationPrompt, useDmNotificationPrompt } from "@/components/NotificationPrompt";
 import { MessageWrapper, DeletedMessage, EditedIndicator, MessageActions } from "@/components/MessageContextMenu";
+import { MessageContent } from "@/components/LinkPreview";
+import { EmojiReactions, AddReactionButton } from "@/components/EmojiReactions";
+import { ChatImageUpload, ChatImage, isImageUrl } from "@/components/ChatImageUpload";
 
 type AIMessage = {
   id: string;
@@ -105,8 +108,10 @@ export default function Chat() {
     if (error) {
       console.error("Error marking messages as read:", error);
     } else {
-      // Immediately invalidate the unread count query to update the badge
-      queryClient.invalidateQueries({ queryKey: ["unread-messages-count", user.id] });
+      // Immediately invalidate and refetch the unread count query to update the badge
+      queryClient.invalidateQueries({ queryKey: ["unread-messages-count"] });
+      // Force immediate refetch
+      queryClient.refetchQueries({ queryKey: ["unread-messages-count"] });
     }
   }, [user, queryClient]);
 
@@ -1062,7 +1067,7 @@ export default function Chat() {
                         : "bg-background border border-border text-muted-foreground hover:bg-muted"
                     }`}
                   >
-                    <span>{topic.icon}</span>
+                    <span>{topic.icon || "#"}</span>
                     {topic.name}
                   </button>
                 ))
@@ -1340,8 +1345,21 @@ export default function Chat() {
                               : "bg-muted text-foreground rounded-tl-none border border-border"
                           }`}
                         >
-                          {isDeleted ? <DeletedMessage /> : msg.content}
+                          {isDeleted ? (
+                            <DeletedMessage />
+                          ) : isImageUrl(msg.content) ? (
+                            <ChatImage src={msg.content} />
+                          ) : (
+                            <MessageContent content={msg.content} />
+                          )}
                         </div>
+                        {/* Emoji reactions */}
+                        {!isDeleted && (
+                          <EmojiReactions
+                            messageId={msg.id}
+                            messageType={isPrivateChat ? "private" : "public"}
+                          />
+                        )}
                         {/* Desktop hover actions - only for own non-deleted messages */}
                         {isOwn && !isDeleted && (
                           <div className="hidden md:block">
@@ -1390,14 +1408,66 @@ export default function Chat() {
         {/* Input Area - Fixed at bottom */}
         <div className="shrink-0 p-3 md:p-4 pb-safe bg-card border-t border-border sticky bottom-0">
           <form onSubmit={handleSend} className="flex gap-2 relative">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="text-muted-foreground shrink-0 rounded-full"
-            >
-              {isAiChat ? <Sparkles className="h-5 w-5" /> : isPrivateChat ? <Lock className="h-5 w-5" /> : <Hash className="h-5 w-5" />}
-            </Button>
+            {isAiChat ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground shrink-0 rounded-full"
+              >
+                <Sparkles className="h-5 w-5" />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={`shrink-0 rounded-full transition-colors ${
+                  (isPrivateChat ? hasNotificationsEnabled : isFollowingTopic)
+                    ? "text-primary"
+                    : "text-muted-foreground"
+                }`}
+                onClick={() => {
+                  if (!hasNotificationsEnabled) {
+                    if (isPrivateChat) {
+                      setShowDmPrompt(true);
+                    } else {
+                      setShowTopicPrompt(true);
+                    }
+                  } else if (!isPrivateChat) {
+                    toggleFollow();
+                  }
+                }}
+                disabled={followLoading}
+                title={
+                  isPrivateChat
+                    ? hasNotificationsEnabled ? "Notifications enabled" : "Enable notifications"
+                    : isFollowingTopic ? "Disable notifications for this channel" : "Enable notifications for this channel"
+                }
+              >
+                {followLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (isPrivateChat ? hasNotificationsEnabled : isFollowingTopic) ? (
+                  <Bell className="h-5 w-5" />
+                ) : (
+                  <BellOff className="h-5 w-5" />
+                )}
+              </Button>
+            )}
+            {/* Image upload button (not for AI chat) */}
+            {!isAiChat && (
+              <ChatImageUpload
+                onImageUploaded={(imageUrl) => {
+                  // Send the image URL as a message
+                  if (isPrivateChat) {
+                    sendPrivateMessage.mutate(imageUrl);
+                  } else {
+                    sendMessage.mutate(imageUrl);
+                  }
+                }}
+                disabled={isPending}
+              />
+            )}
             <Input
               ref={inputRef}
               value={input}

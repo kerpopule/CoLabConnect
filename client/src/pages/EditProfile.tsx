@@ -470,8 +470,12 @@ export default function EditProfile() {
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-full"
-          onClick={() => setLocation("/my-profile")}
+          className="rounded-full min-h-[44px] min-w-[44px]"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setLocation("/my-profile");
+          }}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>

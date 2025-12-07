@@ -438,6 +438,133 @@ export async function registerRoutes(
   });
 
   // ============================================
+  // Link Preview Endpoint
+  // ============================================
+
+  app.post("/api/link-preview", async (req, res) => {
+    try {
+      const { url } = req.body;
+
+      if (!url) {
+        return res.status(400).json({ error: "URL is required" });
+      }
+
+      // Validate URL format
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        return res.status(400).json({ error: "Invalid URL format" });
+      }
+
+      // Fetch the page with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
+      try {
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": "CoLab-Connect/1.0 (Link Preview Bot)",
+            "Accept": "text/html",
+          },
+        });
+
+        clearTimeout(timeout);
+
+        if (!response.ok) {
+          return res.status(404).json({ error: "Failed to fetch URL" });
+        }
+
+        const html = await response.text();
+
+        // Parse meta tags with regex (simple approach, no external deps)
+        const getMetaContent = (property: string): string | undefined => {
+          // Try og: tags first
+          const ogMatch = html.match(new RegExp(`<meta[^>]*property=["']og:${property}["'][^>]*content=["']([^"']+)["']`, "i"))
+            || html.match(new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:${property}["']`, "i"));
+          if (ogMatch) return ogMatch[1];
+
+          // Try twitter: tags
+          const twitterMatch = html.match(new RegExp(`<meta[^>]*name=["']twitter:${property}["'][^>]*content=["']([^"']+)["']`, "i"))
+            || html.match(new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:${property}["']`, "i"));
+          if (twitterMatch) return twitterMatch[1];
+
+          // Try standard meta name
+          const metaMatch = html.match(new RegExp(`<meta[^>]*name=["']${property}["'][^>]*content=["']([^"']+)["']`, "i"))
+            || html.match(new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*name=["']${property}["']`, "i"));
+          if (metaMatch) return metaMatch[1];
+
+          return undefined;
+        };
+
+        // Get title
+        let title = getMetaContent("title");
+        if (!title) {
+          const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+          title = titleMatch ? titleMatch[1].trim() : undefined;
+        }
+
+        // Get description
+        const description = getMetaContent("description");
+
+        // Get image
+        let image = getMetaContent("image");
+        if (image && !image.startsWith("http")) {
+          // Convert relative URL to absolute
+          image = new URL(image, url).href;
+        }
+
+        // Get site name
+        const siteName = getMetaContent("site_name");
+
+        // Get favicon
+        let favicon: string | undefined;
+        const faviconMatch = html.match(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i)
+          || html.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["'](?:shortcut )?icon["']/i);
+        if (faviconMatch) {
+          favicon = faviconMatch[1];
+          if (!favicon.startsWith("http")) {
+            favicon = new URL(favicon, url).href;
+          }
+        } else {
+          // Default to /favicon.ico
+          favicon = `${parsedUrl.origin}/favicon.ico`;
+        }
+
+        // Decode HTML entities in title and description
+        const decodeEntities = (str: string | undefined): string | undefined => {
+          if (!str) return undefined;
+          return str
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&nbsp;/g, " ");
+        };
+
+        res.json({
+          title: decodeEntities(title),
+          description: decodeEntities(description),
+          image,
+          siteName: decodeEntities(siteName),
+          favicon,
+        });
+      } catch (fetchError: any) {
+        clearTimeout(timeout);
+        if (fetchError.name === "AbortError") {
+          return res.status(408).json({ error: "Request timeout" });
+        }
+        throw fetchError;
+      }
+    } catch (error: any) {
+      log(`Link preview error: ${error.message}`);
+      res.status(500).json({ error: "Failed to fetch link preview" });
+    }
+  });
+
+  // ============================================
   // Notification Trigger Endpoints (internal use)
   // ============================================
 

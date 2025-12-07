@@ -112,6 +112,27 @@ export default function UserProfile() {
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
 
+      // Check if any connection already exists in either direction
+      const { data: existingConnection } = await supabase
+        .from("connections")
+        .select("*")
+        .or(`and(follower_id.eq.${user.id},following_id.eq.${id}),and(follower_id.eq.${id},following_id.eq.${user.id})`)
+        .maybeSingle();
+
+      if (existingConnection) {
+        // If they sent us a request, accept it instead of creating a duplicate
+        if (existingConnection.follower_id === id && existingConnection.status === "pending") {
+          const { error } = await supabase
+            .from("connections")
+            .update({ status: "accepted" })
+            .eq("id", existingConnection.id);
+          if (error) throw error;
+          return { action: "accepted" };
+        }
+        // Already connected or request already sent
+        throw new Error("Connection already exists");
+      }
+
       const { error } = await supabase.from("connections").insert({
         follower_id: user.id,
         following_id: id,
@@ -119,25 +140,36 @@ export default function UserProfile() {
       } as any);
 
       if (error) throw error;
+      return { action: "sent" };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
-      toast({
-        title: "Request sent!",
-        description: `Connection request sent to ${profile?.name}.`,
-      });
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
 
-      // Send push notification to the recipient
-      if (id && user && currentUserProfile) {
-        fetch("/api/notify/connection", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            receiverId: id,
-            senderId: user.id,
-            senderName: currentUserProfile.name,
-          }),
-        }).catch(console.error);
+      if (result?.action === "accepted") {
+        toast({
+          title: "Connected!",
+          description: `You are now connected with ${profile?.name}.`,
+        });
+      } else {
+        toast({
+          title: "Request sent!",
+          description: `Connection request sent to ${profile?.name}.`,
+        });
+
+        // Send push notification to the recipient
+        if (id && user && currentUserProfile) {
+          fetch("/api/notify/connection", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              receiverId: id,
+              senderId: user.id,
+              senderName: currentUserProfile.name,
+            }),
+          }).catch(console.error);
+        }
       }
     },
     onError: (error: any) => {

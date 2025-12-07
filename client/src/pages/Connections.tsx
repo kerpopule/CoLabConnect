@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,25 @@ import {
   Loader2,
   Users,
   Inbox,
+  Trash2,
+  MoreHorizontal,
 } from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Profile, Connection } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -29,6 +47,9 @@ export default function Connections() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [connectionToRemove, setConnectionToRemove] = useState<{ id: string; name: string } | null>(null);
+  const [swipedConnection, setSwipedConnection] = useState<string | null>(null);
+  const touchStartX = useRef<number>(0);
 
   // Fetch incoming connection requests (people who want to connect with me)
   const { data: incomingRequests, isLoading: loadingIncoming } = useQuery({
@@ -102,6 +123,33 @@ export default function Connections() {
   // Accept connection request
   const acceptRequest = useMutation({
     mutationFn: async (connectionId: string) => {
+      // First, get the connection to know who's involved
+      const { data: connection, error: fetchError } = await supabase
+        .from("connections")
+        .select("*")
+        .eq("id", connectionId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Check if we also sent them a request (mutual pending)
+      // If so, delete our outgoing request to avoid duplicates
+      const { data: ourRequest } = await supabase
+        .from("connections")
+        .select("id")
+        .eq("follower_id", user!.id)
+        .eq("following_id", connection.follower_id)
+        .maybeSingle();
+
+      if (ourRequest) {
+        // Delete our duplicate outgoing request
+        await supabase
+          .from("connections")
+          .delete()
+          .eq("id", ourRequest.id);
+      }
+
+      // Accept their request
       const { error } = await supabase
         .from("connections")
         .update({ status: "accepted" })
@@ -111,6 +159,8 @@ export default function Connections() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       toast({
         title: "Connection accepted!",
         description: "You are now connected.",
@@ -149,6 +199,53 @@ export default function Connections() {
       });
     },
   });
+
+  // Remove connection (delete from both sides)
+  const removeConnection = useMutation({
+    mutationFn: async (connectionId: string) => {
+      const { error } = await supabase
+        .from("connections")
+        .delete()
+        .eq("id", connectionId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+      queryClient.invalidateQueries({ queryKey: ["private-chats"] });
+      setConnectionToRemove(null);
+      setSwipedConnection(null);
+      toast({
+        title: "Connection removed",
+        description: "You are no longer connected.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to remove connection",
+        description: error.message,
+      });
+    },
+  });
+
+  // Handle touch events for swipe to delete
+  const handleTouchStart = (e: React.TouchEvent, connectionId: string) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent, connectionId: string) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX.current - touchEndX;
+
+    // Swipe left (diff > 0) to show delete button
+    if (diff > 50) {
+      setSwipedConnection(connectionId);
+    } else if (diff < -50) {
+      setSwipedConnection(null);
+    }
+  };
 
   const getInitials = (name: string) => {
     return name
@@ -219,39 +316,66 @@ export default function Connections() {
               {myConnections.map((connection) => {
                 const profile = connection.otherProfile;
                 if (!profile) return null;
+                const isSwiped = swipedConnection === connection.id;
 
                 return (
-                  <Card key={connection.id} className="border-border/50">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <Link href={`/profile/${profile.id}`}>
-                          <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
-                            <Avatar className="h-12 w-12">
-                              <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
-                              <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                                {getInitials(profile.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <h3 className="font-semibold">{profile.name}</h3>
-                              <p className="text-sm text-muted-foreground">
-                                {profile.role || "Member"}
-                              </p>
+                  <ContextMenu key={connection.id}>
+                    <ContextMenuTrigger asChild>
+                      <div
+                        className="relative overflow-hidden"
+                        onTouchStart={(e) => handleTouchStart(e, connection.id)}
+                        onTouchEnd={(e) => handleTouchEnd(e, connection.id)}
+                      >
+                        <Card className={`border-border/50 transition-transform duration-200 ${isSwiped ? '-translate-x-20' : ''}`}>
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <Link href={`/profile/${profile.id}`}>
+                                <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
+                                  <Avatar className="h-12 w-12">
+                                    <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
+                                    <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                                      {getInitials(profile.name)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <h3 className="font-semibold">{profile.name}</h3>
+                                    <p className="text-sm text-muted-foreground">
+                                      {profile.role || "Member"}
+                                    </p>
+                                  </div>
+                                </div>
+                              </Link>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="rounded-full"
+                                onClick={() => handleMessage(profile.id)}
+                              >
+                                <MessageCircle className="h-4 w-4 mr-2" />
+                                Message
+                              </Button>
                             </div>
-                          </div>
-                        </Link>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="rounded-full"
-                          onClick={() => handleMessage(profile.id)}
+                          </CardContent>
+                        </Card>
+                        {/* Swipe reveal delete button */}
+                        <button
+                          className={`absolute right-0 top-0 bottom-0 w-20 bg-destructive text-destructive-foreground flex items-center justify-center transition-opacity ${isSwiped ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                          onClick={() => setConnectionToRemove({ id: connection.id, name: profile.name })}
                         >
-                          <MessageCircle className="h-4 w-4 mr-2" />
-                          Message
-                        </Button>
+                          <Trash2 className="h-5 w-5" />
+                        </button>
                       </div>
-                    </CardContent>
-                  </Card>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setConnectionToRemove({ id: connection.id, name: profile.name })}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Remove Connection
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 );
               })}
             </div>
@@ -346,6 +470,34 @@ export default function Connections() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Remove Connection Confirmation Dialog */}
+      <AlertDialog open={!!connectionToRemove} onOpenChange={(open) => !open && setConnectionToRemove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Connection</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove {connectionToRemove?.name} from your connections?
+              This will remove the connection for both of you.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConnectionToRemove(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => connectionToRemove && removeConnection.mutate(connectionToRemove.id)}
+              disabled={removeConnection.isPending}
+            >
+              {removeConnection.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
