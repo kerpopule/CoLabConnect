@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { saveLastRoute } from "@/pages/Home";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -145,6 +146,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
       metaThemeColor.setAttribute("content", isDark ? "#0f172a" : "#f8fafc");
     }
   }, [isDark]);
+
+  // Save current route to localStorage for returning users
+  useEffect(() => {
+    if (user) {
+      saveLastRoute(location);
+    }
+  }, [location, user]);
 
   return (
     <div className={`bg-background flex flex-col pb-20 md:pb-0 font-sans ${isChatPage ? "h-dvh overflow-hidden fixed inset-0 md:relative md:h-screen" : "min-h-screen"}`}>

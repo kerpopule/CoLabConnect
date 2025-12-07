@@ -5,6 +5,7 @@ import { User } from "@supabase/supabase-js";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
+import { getLastRoute } from "./Home";
 
 // Helper function to ensure a profile exists for the user
 // Returns true if this is a new profile (first sign-in)
@@ -126,8 +127,8 @@ export default function AuthCallback() {
 
           setStatus("success");
           setTimeout(() => {
-            // Redirect new users to edit profile to complete their setup
-            setLocation(isNewUser ? "/profile/edit" : "/directory");
+            // Redirect new users to edit profile, existing users to their last visited page
+            setLocation(isNewUser ? "/profile/edit" : getLastRoute());
           }, 1500);
           return;
         }
@@ -159,7 +160,7 @@ export default function AuthCallback() {
 
           setStatus("success");
           setTimeout(() => {
-            setLocation(isNewUser ? "/profile/edit" : "/directory");
+            setLocation(isNewUser ? "/profile/edit" : getLastRoute());
           }, 1500);
           return;
         }
@@ -186,7 +187,7 @@ export default function AuthCallback() {
 
           setStatus("success");
           setTimeout(() => {
-            setLocation(isNewUser ? "/profile/edit" : "/directory");
+            setLocation(isNewUser ? "/profile/edit" : getLastRoute());
           }, 1500);
           return;
         }

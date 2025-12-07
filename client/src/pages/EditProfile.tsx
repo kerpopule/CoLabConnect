@@ -468,7 +468,7 @@ export default function EditProfile() {
             variant="ghost"
             size="icon"
             className="rounded-full"
-            onClick={() => window.history.back()}
+            onClick={() => setLocation("/my-profile")}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>

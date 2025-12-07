@@ -1,11 +1,41 @@
-import { Link } from "wouter";
+import { useEffect } from "react";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, ScanLine, Users, ArrowUpRight, Loader2 } from "lucide-react";
 import generatedImage from '@assets/generated_images/abstract_modern_community_connection_graphic.png';
 import { useQuery } from "@tanstack/react-query";
 import { supabase, Topic } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
+
+// Key for storing last visited route
+const LAST_ROUTE_KEY = "colab-last-route";
+
+// Routes that should NOT be saved as "last route"
+const EXCLUDED_ROUTES = ["/", "/login", "/auth/callback", "/verify-email", "/create-card"];
+
+// Save current route to localStorage (call this from Layout)
+export function saveLastRoute(path: string) {
+  if (!EXCLUDED_ROUTES.includes(path) && !path.startsWith("/auth/")) {
+    localStorage.setItem(LAST_ROUTE_KEY, path);
+  }
+}
+
+// Get saved last route (or default to /directory)
+export function getLastRoute(): string {
+  return localStorage.getItem(LAST_ROUTE_KEY) || "/directory";
+}
 
 export default function Home() {
+  const { user, loading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  // Redirect logged-in users to their last route or directory
+  useEffect(() => {
+    if (!loading && user) {
+      const lastRoute = getLastRoute();
+      setLocation(lastRoute);
+    }
+  }, [user, loading, setLocation]);
   // Fetch real topics from Supabase
   const { data: topics, isLoading: topicsLoading } = useQuery({
     queryKey: ["topics"],
