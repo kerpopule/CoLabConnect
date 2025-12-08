@@ -24,13 +24,13 @@ type AIMessage = {
   created_at: string;
 };
 
-// Fallback topics when database is empty
+// Fallback topics when database is empty - MUST match TOPIC_ORDER below
 const FALLBACK_TOPICS = [
   { id: "general", slug: "general", name: "General", icon: "💬", description: "", created_at: "" },
-  { id: "hiring", slug: "hiring", name: "Hiring", icon: "💼", description: "", created_at: "" },
-  { id: "fundraising", slug: "fundraising", name: "Fundraising", icon: "💰", description: "", created_at: "" },
-  { id: "tech", slug: "tech", name: "Tech", icon: "💻", description: "", created_at: "" },
   { id: "events", slug: "events", name: "Events", icon: "📅", description: "", created_at: "" },
+  { id: "tech", slug: "tech", name: "Tech", icon: "💻", description: "", created_at: "" },
+  { id: "fundraising", slug: "fundraising", name: "Fundraising", icon: "💰", description: "", created_at: "" },
+  { id: "hiring", slug: "hiring", name: "Hiring", icon: "💼", description: "", created_at: "" },
 ];
 
 type MessageWithProfile = Message & {
@@ -234,6 +234,8 @@ export default function Chat() {
 
       return sortedData;
     },
+    staleTime: Infinity, // Topics don't change, no need to refetch
+    gcTime: Infinity, // Keep in cache forever during session
   });
 
   // Fetch my private chats (accepted connections)
