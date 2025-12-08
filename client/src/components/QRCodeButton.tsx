@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { QrCode, X, Share2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 export function QRCodeButton({ mode = "mobile" }: { mode?: "mobile" | "desktop" }) {
   const [isOpen, setIsOpen] = useState(false);
   const { user, profile } = useAuth();
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   if (!user || !profile) {
     return null;
@@ -74,89 +75,166 @@ export function QRCodeButton({ mode = "mobile" }: { mode?: "mobile" | "desktop" 
     img.src = "data:image/svg+xml;base64," + btoa(svgData);
   };
 
-  const TriggerButton = () => (
-    <Button
-      size="icon"
-      className={`rounded-full shadow-lg bg-gradient-to-tr from-primary to-accent hover:shadow-xl hover:scale-105 transition-all duration-300 ${
-        mode === "desktop"
-          ? "w-full h-12 rounded-xl flex items-center justify-start px-4"
-          : "h-12 w-12"
-      }`}
-    >
-      <QrCode
-        className={`text-white ${mode === "desktop" ? "mr-2 h-5 w-5" : "h-6 w-6"}`}
-      />
-      {mode === "desktop" && (
-        <span className="text-white font-medium">My QR Code</span>
-      )}
-    </Button>
-  );
+  // Desktop mode uses standard dialog
+  if (mode === "desktop") {
+    return (
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogTrigger asChild>
+          <Button
+            className="w-full h-12 rounded-xl flex items-center justify-start px-4 rounded-full shadow-lg bg-gradient-to-tr from-primary to-accent hover:shadow-xl hover:scale-105 transition-all duration-300"
+          >
+            <QrCode className="text-white mr-2 h-5 w-5" />
+            <span className="text-white font-medium">My QR Code</span>
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center font-display">Share Your Profile</DialogTitle>
+          </DialogHeader>
+          <QRContent
+            profile={profile}
+            profileUrl={profileUrl}
+            getInitials={getInitials}
+            handleShare={handleShare}
+            handleDownload={handleDownload}
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
+  // Mobile mode uses custom bottom-right popup
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        <div>
-          <TriggerButton />
+    <>
+      {/* Trigger Button - larger and more pronounced */}
+      <button
+        ref={buttonRef}
+        onClick={() => setIsOpen(!isOpen)}
+        className={`relative z-[60] h-14 w-14 rounded-full shadow-lg bg-gradient-to-tr from-primary to-accent hover:shadow-xl hover:scale-105 transition-all duration-300 flex items-center justify-center ${
+          isOpen ? "scale-110 shadow-xl" : ""
+        }`}
+      >
+        <QrCode className="text-white h-7 w-7" />
+      </button>
+
+      {/* Backdrop - doesn't cover the button area */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 animate-in fade-in-0 duration-200"
+          onClick={() => setIsOpen(false)}
+          style={{
+            // Cut out the button area from the backdrop
+            clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 6rem), calc(100% - 5rem) calc(100% - 6rem), calc(100% - 5rem) 100%, 0 100%)"
+          }}
+        />
+      )}
+
+      {/* QR Code Panel - animates from bottom right */}
+      <div
+        className={`fixed z-[55] bottom-24 right-4 w-[calc(100%-2rem)] max-w-sm bg-background border border-border rounded-2xl shadow-2xl transition-all duration-300 ease-out ${
+          isOpen
+            ? "opacity-100 translate-y-0 scale-100"
+            : "opacity-0 translate-y-8 scale-95 pointer-events-none"
+        }`}
+        style={{
+          transformOrigin: "bottom right",
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h3 className="font-display font-bold text-lg">Share Your Profile</h3>
+          <button
+            onClick={() => setIsOpen(false)}
+            className="p-2 rounded-full hover:bg-muted transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-center font-display">Share Your Profile</DialogTitle>
-        </DialogHeader>
 
-        <div className="flex flex-col items-center space-y-6 py-4">
-          {/* Profile info */}
-          <div className="flex flex-col items-center gap-3">
-            <Avatar className="h-16 w-16 border-2 border-primary/20">
-              <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
-              <AvatarFallback className="bg-primary/10 text-primary font-medium text-lg">
-                {getInitials(profile.name)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="text-center">
-              <h3 className="font-bold text-lg">{profile.name}</h3>
-              <p className="text-sm text-muted-foreground">{profile.role || "Member"}</p>
-            </div>
-          </div>
-
-          {/* QR Code */}
-          <div className="bg-white p-4 rounded-2xl shadow-inner">
-            <QRCodeSVG
-              id="profile-qr-code"
-              value={profileUrl}
-              size={200}
-              level="H"
-              includeMargin={true}
-              fgColor="#0d9488"
-              bgColor="#ffffff"
-            />
-          </div>
-
-          <p className="text-sm text-muted-foreground text-center max-w-xs">
-            Scan this code to view your profile and connect with you on Co:Lab
-          </p>
-
-          {/* Action buttons */}
-          <div className="flex gap-3 w-full">
-            <Button
-              variant="outline"
-              className="flex-1 rounded-full"
-              onClick={handleShare}
-            >
-              <Share2 className="h-4 w-4 mr-2" />
-              Share
-            </Button>
-            <Button
-              variant="outline"
-              className="flex-1 rounded-full"
-              onClick={handleDownload}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Save
-            </Button>
-          </div>
+        {/* Content */}
+        <div className="p-4">
+          <QRContent
+            profile={profile}
+            profileUrl={profileUrl}
+            getInitials={getInitials}
+            handleShare={handleShare}
+            handleDownload={handleDownload}
+            compact
+          />
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </>
+  );
+}
+
+// Extracted QR content component for reuse
+function QRContent({
+  profile,
+  profileUrl,
+  getInitials,
+  handleShare,
+  handleDownload,
+  compact = false
+}: {
+  profile: any;
+  profileUrl: string;
+  getInitials: (name: string) => string;
+  handleShare: () => void;
+  handleDownload: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`flex flex-col items-center ${compact ? "space-y-4" : "space-y-6 py-4"}`}>
+      {/* Profile info */}
+      <div className="flex flex-col items-center gap-2">
+        <Avatar className={`border-2 border-primary/20 ${compact ? "h-12 w-12" : "h-16 w-16"}`}>
+          <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
+          <AvatarFallback className="bg-primary/10 text-primary font-medium text-lg">
+            {getInitials(profile.name)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="text-center">
+          <h3 className={`font-bold ${compact ? "text-base" : "text-lg"}`}>{profile.name}</h3>
+          <p className="text-sm text-muted-foreground">{profile.role || "Member"}</p>
+        </div>
+      </div>
+
+      {/* QR Code */}
+      <div className="bg-white p-3 rounded-2xl shadow-inner">
+        <QRCodeSVG
+          id="profile-qr-code"
+          value={profileUrl}
+          size={compact ? 160 : 200}
+          level="H"
+          includeMargin={true}
+          fgColor="#0d9488"
+          bgColor="#ffffff"
+        />
+      </div>
+
+      <p className={`text-muted-foreground text-center max-w-xs ${compact ? "text-xs" : "text-sm"}`}>
+        Scan this code to view your profile and connect with you on Co:Lab
+      </p>
+
+      {/* Action buttons */}
+      <div className="flex gap-3 w-full">
+        <Button
+          variant="outline"
+          className="flex-1 rounded-full"
+          onClick={handleShare}
+        >
+          <Share2 className="h-4 w-4 mr-2" />
+          Share
+        </Button>
+        <Button
+          variant="outline"
+          className="flex-1 rounded-full"
+          onClick={handleDownload}
+        >
+          <Download className="h-4 w-4 mr-2" />
+          Save
+        </Button>
+      </div>
+    </div>
   );
 }
