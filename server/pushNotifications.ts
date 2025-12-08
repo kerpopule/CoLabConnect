@@ -31,7 +31,7 @@ interface NotificationPayload {
   tag?: string;
   requireInteraction?: boolean;
   data?: {
-    type: "dm" | "connection" | "chat" | "profile";
+    type: "dm" | "connection" | "chat" | "profile" | "mention";
     senderId?: string;
     senderName?: string;
     topicId?: string;
@@ -243,6 +243,39 @@ export async function notifyReaction(
       senderName,
       url: `/chat?dm=${senderId}`,
     },
+  });
+}
+
+// Send notification for an @mention in chat
+export async function notifyMention(
+  receiverId: string,
+  senderId: string,
+  senderName: string,
+  topicName: string,
+  messagePreview: string
+): Promise<void> {
+  // Don't notify yourself
+  if (receiverId === senderId) return;
+
+  // @mentions should always send notifications (like DMs), regardless of topic follow status
+  // This is intentional - mentions are direct and important
+  await sendPushNotification(receiverId, {
+    title: `${senderName} mentioned you in #${topicName}`,
+    body: messagePreview.length > 80 ? messagePreview.slice(0, 77) + "..." : messagePreview,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `mention-${senderId}-${Date.now()}`,
+    requireInteraction: true, // Mentions are important, require interaction
+    data: {
+      type: "mention",
+      senderId,
+      senderName,
+      url: `/chat`,
+    },
+    actions: [
+      { action: "reply", title: "Reply" },
+      { action: "dismiss", title: "Dismiss" },
+    ],
   });
 }
 

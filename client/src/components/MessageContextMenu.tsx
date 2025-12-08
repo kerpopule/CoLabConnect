@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Edit2, Trash2, X, Check, Loader2 } from "lucide-react";
+import { Edit2, Trash2, X, Check, Loader2, Reply, VolumeX, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -228,6 +228,14 @@ interface MessageWrapperProps {
   isDeleted: boolean;
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
+  // New props for Reply/Mute on others' messages
+  senderName?: string;
+  senderId?: string;
+  onReply?: (senderName: string) => void;
+  onMute?: (userId: string) => Promise<void>;
+  onUnmute?: (userId: string) => Promise<void>;
+  isMuted?: boolean;
+  isPrivateChat?: boolean;
 }
 
 export function MessageWrapper({
@@ -238,14 +246,27 @@ export function MessageWrapper({
   isDeleted,
   onEdit,
   onDelete,
+  senderName,
+  senderId,
+  onReply,
+  onMute,
+  onUnmute,
+  isMuted = false,
+  isPrivateChat = false,
 }: MessageWrapperProps) {
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
 
-  // Don't add interactions for others' messages or deleted messages
-  if (!isOwnMessage || isDeleted) {
+  // Don't add interactions for deleted messages
+  // For DMs, only show actions for own messages (edit/delete)
+  if (isDeleted) {
+    return <>{children}</>;
+  }
+
+  // In private chats, only own messages get context menu
+  if (isPrivateChat && !isOwnMessage) {
     return <>{children}</>;
   }
 
@@ -299,34 +320,88 @@ export function MessageWrapper({
       {/* Actions overlay for long-press on mobile */}
       {showActions && !isEditing && (
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm rounded-2xl flex items-center justify-center gap-4 z-10">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setShowActions(false);
-              setIsEditing(true);
-            }}
-            className="flex items-center gap-2"
-          >
-            <Edit2 className="h-4 w-4" />
-            Edit
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={async () => {
-              try {
-                await onDelete(messageId);
-              } catch (error) {
-                console.error("Failed to delete:", error);
-              }
-              setShowActions(false);
-            }}
-            className="flex items-center gap-2"
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
+          {isOwnMessage ? (
+            // Own message actions: Edit & Delete
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setShowActions(false);
+                  setIsEditing(true);
+                }}
+                className="flex items-center gap-2"
+              >
+                <Edit2 className="h-4 w-4" />
+                Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={async () => {
+                  try {
+                    await onDelete(messageId);
+                  } catch (error) {
+                    console.error("Failed to delete:", error);
+                  }
+                  setShowActions(false);
+                }}
+                className="flex items-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            </>
+          ) : (
+            // Others' message actions: Reply & Mute/Unmute
+            <>
+              {onReply && senderName && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    onReply(senderName);
+                    setShowActions(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Reply className="h-4 w-4" />
+                  Reply
+                </Button>
+              )}
+              {senderId && (isMuted ? onUnmute : onMute) && (
+                <Button
+                  size="sm"
+                  variant={isMuted ? "outline" : "secondary"}
+                  onClick={async () => {
+                    try {
+                      if (isMuted && onUnmute) {
+                        await onUnmute(senderId);
+                      } else if (onMute) {
+                        await onMute(senderId);
+                      }
+                    } catch (error) {
+                      console.error("Failed to mute/unmute:", error);
+                    }
+                    setShowActions(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  {isMuted ? (
+                    <>
+                      <Volume2 className="h-4 w-4" />
+                      Unmute
+                    </>
+                  ) : (
+                    <>
+                      <VolumeX className="h-4 w-4" />
+                      Mute
+                    </>
+                  )}
+                </Button>
+              )}
+            </>
+          )}
           <Button
             size="sm"
             variant="ghost"

@@ -638,6 +638,53 @@ export async function registerRoutes(
     }
   });
 
+  // Trigger notification for @mentions in chat
+  app.post("/api/notify/mention", async (req, res) => {
+    try {
+      const { topicId, topicName, senderId, senderName, messagePreview, mentionedNames } = req.body;
+
+      if (!topicId || !topicName || !senderId || !senderName || !mentionedNames || !Array.isArray(mentionedNames)) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Look up user IDs by name
+      const { data: mentionedProfiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, name")
+        .in("name", mentionedNames);
+
+      if (profileError) {
+        log(`Error looking up mentioned users: ${profileError.message}`);
+        return res.status(500).json({ error: "Failed to look up users" });
+      }
+
+      if (!mentionedProfiles || mentionedProfiles.length === 0) {
+        return res.json({ success: true, notified: 0 });
+      }
+
+      // Send notifications to each mentioned user (except the sender)
+      const { notifyMention } = await import("./pushNotifications");
+      let notifiedCount = 0;
+
+      for (const profile of mentionedProfiles) {
+        if (profile.id !== senderId) {
+          try {
+            await notifyMention(profile.id, senderId, senderName, topicName, messagePreview || "mentioned you");
+            notifiedCount++;
+          } catch (err: any) {
+            log(`Failed to notify ${profile.name}: ${err.message}`);
+          }
+        }
+      }
+
+      log(`Mention notifications sent: ${notifiedCount}/${mentionedProfiles.length}`);
+      res.json({ success: true, notified: notifiedCount });
+    } catch (error: any) {
+      log(`Mention notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ============================================
   // Profile Reminder Notifications
   // ============================================

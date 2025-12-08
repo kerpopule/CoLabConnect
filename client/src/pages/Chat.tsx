@@ -15,6 +15,7 @@ import { MessageWrapper, DeletedMessage, EditedIndicator, MessageActions } from 
 import { MessageContent } from "@/components/LinkPreview";
 import { EmojiReactions, AddReactionButton } from "@/components/EmojiReactions";
 import { ChatImageUpload, ChatImage, isImageUrl } from "@/components/ChatImageUpload";
+import { useToast } from "@/hooks/use-toast";
 
 type AIMessage = {
   id: string;
@@ -69,11 +70,87 @@ export default function Chat() {
   const [aiPending, setAiPending] = useState(false);
   const { user, profile: currentUserProfile, loading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+
+  // Fetch muted users for the current user
+  const { data: mutedUserIds = [] } = useQuery({
+    queryKey: ["muted-users", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from("muted_users")
+        .select("muted_user_id")
+        .eq("user_id", user.id);
+      if (error) {
+        console.error("Error fetching muted users:", error);
+        return [];
+      }
+      return data.map((row: { muted_user_id: string }) => row.muted_user_id);
+    },
+    enabled: !!user,
+  });
+
+  // Mute a user
+  const handleMuteUser = async (mutedUserId: string) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("muted_users")
+      .insert({ user_id: user.id, muted_user_id: mutedUserId });
+    if (error) {
+      console.error("Error muting user:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to mute user",
+        description: "Please try again.",
+      });
+      return;
+    }
+    // Refresh muted users list
+    queryClient.invalidateQueries({ queryKey: ["muted-users", user.id] });
+    toast({
+      title: "User muted",
+      description: "You won't see their messages in group chats anymore.",
+    });
+  };
+
+  // Unmute a user
+  const handleUnmuteUser = async (mutedUserId: string) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("muted_users")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("muted_user_id", mutedUserId);
+    if (error) {
+      console.error("Error unmuting user:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to unmute user",
+        description: "Please try again.",
+      });
+      return;
+    }
+    // Refresh muted users list
+    queryClient.invalidateQueries({ queryKey: ["muted-users", user.id] });
+    toast({
+      title: "User unmuted",
+      description: "You'll see their messages again.",
+    });
+  };
+
+  // Reply to a user - adds @mention to input
+  const handleReplyToUser = (senderName: string) => {
+    setInput(`@${senderName} `);
+    // Focus the input
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+  };
 
   // Topic follow for notifications
   const { isFollowing: isFollowingTopic, isLoading: followLoading, toggleFollow } = useTopicFollow(activeTopic);
@@ -882,6 +959,25 @@ export default function Chat() {
             messagePreview: content,
           }),
         }).catch(console.error);
+
+        // Check for @mentions and send notifications
+        const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
+        const mentions = content.match(mentionRegex);
+        if (mentions && mentions.length > 0) {
+          // Send mention notifications
+          fetch("/api/notify/mention", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              topicId: activeTopic,
+              topicName: currentTopic.name,
+              senderId: user.id,
+              senderName: currentUserProfile.name,
+              messagePreview: content,
+              mentionedNames: mentions.map(m => m.substring(1)), // Remove @ prefix
+            }),
+          }).catch(console.error);
+        }
       }
     }
   };
@@ -922,9 +1018,17 @@ export default function Chat() {
   const isPrivateChat = !!activeDm && chatMode !== "ai";
   const isAiChat = chatMode === "ai";
   const isLoadingMessages = isAiChat ? false : isPrivateChat ? privateMessagesLoading : messagesLoading;
-  // Filter out deleted messages - they should completely disappear
+  // Filter out deleted messages and muted users (muted users only in public chats)
   const rawMessages = isAiChat ? aiMessages : isPrivateChat ? privateMessages : messages;
-  const displayMessages = rawMessages?.filter((msg: any) => !msg.deleted_at) || [];
+  const displayMessages = rawMessages?.filter((msg: any) => {
+    // Always filter out deleted messages
+    if (msg.deleted_at) return false;
+    // In public chats, filter out muted users
+    if (!isPrivateChat && !isAiChat && msg.user_id && mutedUserIds.includes(msg.user_id)) {
+      return false;
+    }
+    return true;
+  }) || [];
   const isPending = isAiChat ? aiPending : isPrivateChat ? sendPrivateMessage.isPending : sendMessage.isPending;
 
   // Require login to access chat
@@ -1282,9 +1386,11 @@ export default function Chat() {
                   ? msg.sender_profile
                   : msg.profiles;
                 const senderName = senderProfile?.name || "Unknown";
+                const senderId = isPrivateChat ? msg.sender_id : msg.user_id;
 
                 const isDeleted = !!msg.deleted_at;
                 const isEdited = !!msg.edited_at && !isDeleted;
+                const isMuted = senderId ? mutedUserIds.includes(senderId) : false;
 
                 return (
                   <MessageWrapper
@@ -1295,6 +1401,13 @@ export default function Chat() {
                     isDeleted={isDeleted}
                     onEdit={isPrivateChat ? handleEditPrivateMessage : handleEditMessage}
                     onDelete={isPrivateChat ? handleDeletePrivateMessage : handleDeleteMessage}
+                    senderName={senderName}
+                    senderId={senderId}
+                    onReply={handleReplyToUser}
+                    onMute={handleMuteUser}
+                    onUnmute={handleUnmuteUser}
+                    isMuted={isMuted}
+                    isPrivateChat={isPrivateChat}
                   >
                     <div className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}>
                       <Avatar className="w-8 h-8 shrink-0">
