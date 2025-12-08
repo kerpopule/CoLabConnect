@@ -26,12 +26,23 @@ function escapeVCardValue(value: string): string {
 }
 
 /**
- * Convert image URL to base64 data URI
+ * Convert image URL to base64 and detect image type
  */
-async function fetchImageAsBase64(url: string): Promise<string | null> {
+async function fetchImageAsBase64(url: string): Promise<{ data: string; type: string } | null> {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { mode: 'cors' });
+    if (!response.ok) return null;
+
     const blob = await response.blob();
+    const mimeType = blob.type || 'image/jpeg';
+
+    // Determine vCard image type from MIME
+    let imageType = 'JPEG';
+    if (mimeType.includes('png')) {
+      imageType = 'PNG';
+    } else if (mimeType.includes('gif')) {
+      imageType = 'GIF';
+    }
 
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -39,12 +50,17 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
         const base64 = reader.result as string;
         // Extract just the base64 data (remove data:image/...;base64, prefix)
         const base64Data = base64.split(',')[1];
-        resolve(base64Data);
+        if (base64Data) {
+          resolve({ data: base64Data, type: imageType });
+        } else {
+          resolve(null);
+        }
       };
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(blob);
     });
-  } catch {
+  } catch (err) {
+    console.error('Failed to fetch avatar for vCard:', err);
     return null;
   }
 }
@@ -109,10 +125,10 @@ export async function generateVCard(data: VCardData): Promise<string> {
 
   // Photo (base64 encoded)
   if (data.avatarUrl) {
-    const base64Photo = await fetchImageAsBase64(data.avatarUrl);
-    if (base64Photo) {
-      // vCard 3.0 format for photo
-      lines.push(`PHOTO;ENCODING=b;TYPE=JPEG:${base64Photo}`);
+    const photoResult = await fetchImageAsBase64(data.avatarUrl);
+    if (photoResult) {
+      // vCard 3.0 format for photo with correct type
+      lines.push(`PHOTO;ENCODING=b;TYPE=${photoResult.type}:${photoResult.data}`);
     }
   }
 
