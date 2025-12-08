@@ -117,24 +117,24 @@ export function QRCodeButton({ mode = "mobile" }: { mode?: "mobile" | "desktop" 
         <QrCode className="text-white h-7 w-7" />
       </button>
 
-      {/* Backdrop - doesn't cover the button area */}
+      {/* Backdrop - darkens everything except button area */}
       {isOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/60 animate-in fade-in-0 duration-200"
           onClick={() => setIsOpen(false)}
           style={{
-            // Cut out the button area from the backdrop
-            clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 6rem), calc(100% - 5rem) calc(100% - 6rem), calc(100% - 5rem) 100%, 0 100%)"
+            // Cut out the button area from the backdrop (bottom right corner)
+            clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 5.5rem), calc(100% - 4.5rem) calc(100% - 5.5rem), calc(100% - 4.5rem) 100%, 0 100%)"
           }}
         />
       )}
 
-      {/* QR Code Panel - animates from bottom right */}
+      {/* QR Code Panel - animates from bottom right but centers on screen */}
       <div
-        className={`fixed z-[55] bottom-24 right-4 w-[calc(100%-2rem)] max-w-sm bg-background border border-border rounded-2xl shadow-2xl transition-all duration-300 ease-out ${
+        className={`fixed z-[55] left-1/2 top-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm bg-background border border-border rounded-2xl shadow-2xl transition-all duration-300 ease-out ${
           isOpen
-            ? "opacity-100 translate-y-0 scale-100"
-            : "opacity-0 translate-y-8 scale-95 pointer-events-none"
+            ? "opacity-100 -translate-y-1/2 scale-100"
+            : "opacity-0 translate-y-[30vh] scale-95 pointer-events-none"
         }`}
         style={{
           transformOrigin: "bottom right",
