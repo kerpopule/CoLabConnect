@@ -348,7 +348,7 @@ export default function Chat() {
             *,
             members:group_chat_members(
               *,
-              profiles(*)
+              profiles:profiles!group_chat_members_user_id_fkey(*)
             )
           )
         `)
