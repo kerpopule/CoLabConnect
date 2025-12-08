@@ -1,5 +1,7 @@
 // vCard generation utility for saving contacts
 
+import { SocialLink } from "./utils";
+
 export interface VCardData {
   name: string;
   email?: string;
@@ -7,8 +9,8 @@ export interface VCardData {
   role?: string;
   company?: string;
   bio?: string;
-  website?: string;
-  linkedin?: string;
+  avatarUrl?: string;
+  socialLinks?: SocialLink[];
 }
 
 /**
@@ -24,10 +26,53 @@ function escapeVCardValue(value: string): string {
 }
 
 /**
+ * Convert image URL to base64 data URI
+ */
+async function fetchImageAsBase64(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        // Extract just the base64 data (remove data:image/...;base64, prefix)
+        const base64Data = base64.split(',')[1];
+        resolve(base64Data);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map social platform types to vCard X-SOCIALPROFILE types
+ */
+function getVCardSocialType(platformType: string): string {
+  const typeMap: Record<string, string> = {
+    linkedin: 'linkedin',
+    twitter: 'twitter',
+    instagram: 'instagram',
+    github: 'github',
+    youtube: 'youtube',
+    tiktok: 'tiktok',
+    facebook: 'facebook',
+    dribbble: 'dribbble',
+    behance: 'behance',
+    website: 'homepage',
+  };
+  return typeMap[platformType] || platformType;
+}
+
+/**
  * Generate a vCard 3.0 format string from profile data
  * vCard 3.0 is used for maximum compatibility across devices
  */
-export function generateVCard(data: VCardData): string {
+export async function generateVCard(data: VCardData): Promise<string> {
   const lines: string[] = [
     'BEGIN:VCARD',
     'VERSION:3.0',
@@ -40,7 +85,7 @@ export function generateVCard(data: VCardData): string {
   const nameParts = data.name.trim().split(/\s+/);
   const lastName = nameParts.length > 1 ? nameParts.pop() : '';
   const firstName = nameParts.join(' ');
-  lines.push(`N:${escapeVCardValue(lastName || '')};${escapeVCardValue(firstName)};`);
+  lines.push(`N:${escapeVCardValue(lastName || '')};${escapeVCardValue(firstName)};;;`);
 
   // Job title
   if (data.role) {
@@ -62,23 +107,34 @@ export function generateVCard(data: VCardData): string {
     lines.push(`TEL;TYPE=CELL:${escapeVCardValue(data.phone)}`);
   }
 
+  // Photo (base64 encoded)
+  if (data.avatarUrl) {
+    const base64Photo = await fetchImageAsBase64(data.avatarUrl);
+    if (base64Photo) {
+      // vCard 3.0 format for photo
+      lines.push(`PHOTO;ENCODING=b;TYPE=JPEG:${base64Photo}`);
+    }
+  }
+
   // Bio as note
   if (data.bio) {
     lines.push(`NOTE:${escapeVCardValue(data.bio)}`);
   }
 
-  // Website URL
-  if (data.website) {
-    lines.push(`URL:${data.website}`);
-  }
+  // All social links
+  if (data.socialLinks && data.socialLinks.length > 0) {
+    for (const link of data.socialLinks) {
+      const socialType = getVCardSocialType(link.type);
 
-  // LinkedIn as social profile
-  if (data.linkedin) {
-    lines.push(`X-SOCIALPROFILE;TYPE=linkedin:${data.linkedin}`);
+      // Website type gets URL field, others get X-SOCIALPROFILE
+      if (link.type === 'website') {
+        lines.push(`URL:${link.url}`);
+      } else {
+        // X-SOCIALPROFILE is widely supported on iOS/macOS
+        lines.push(`X-SOCIALPROFILE;TYPE=${socialType}:${link.url}`);
+      }
+    }
   }
-
-  // Add source note
-  lines.push(`NOTE:Contact saved from Co:Lab Connect`);
 
   lines.push('END:VCARD');
 
@@ -88,8 +144,8 @@ export function generateVCard(data: VCardData): string {
 /**
  * Download a vCard file to the user's device
  */
-export function downloadVCard(data: VCardData, filename: string): void {
-  const vcardContent = generateVCard(data);
+export async function downloadVCard(data: VCardData, filename: string): Promise<void> {
+  const vcardContent = await generateVCard(data);
 
   // Create blob with vCard content
   const blob = new Blob([vcardContent], { type: 'text/vcard;charset=utf-8' });
