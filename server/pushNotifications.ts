@@ -31,10 +31,11 @@ interface NotificationPayload {
   tag?: string;
   requireInteraction?: boolean;
   data?: {
-    type: "dm" | "connection" | "chat" | "profile" | "mention";
+    type: "dm" | "connection" | "chat" | "profile" | "mention" | "group_invite" | "group_message";
     senderId?: string;
     senderName?: string;
     topicId?: string;
+    groupId?: string;
     url?: string;
   };
   actions?: Array<{ action: string; title: string }>;
@@ -277,6 +278,96 @@ export async function notifyMention(
       { action: "dismiss", title: "Dismiss" },
     ],
   });
+}
+
+// Send notification for a group chat invite
+export async function notifyGroupInvite(
+  receiverId: string,
+  senderId: string,
+  senderName: string,
+  groupName: string,
+  groupId: string
+): Promise<void> {
+  // Don't notify yourself
+  if (receiverId === senderId) return;
+
+  // Check if user has group notifications enabled (default to DM preference or enabled)
+  const { data: prefs } = await supabase
+    .from("notification_preferences")
+    .select("dm_notifications")
+    .eq("user_id", receiverId)
+    .single();
+
+  // Default to enabled if no preference set (use dm_notifications as fallback)
+  if (prefs && prefs.dm_notifications === false) {
+    return;
+  }
+
+  await sendPushNotification(receiverId, {
+    title: "Group Chat Invite",
+    body: `${senderName} invited you to ${groupName}`,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `group-invite-${groupId}`,
+    requireInteraction: true,
+    data: {
+      type: "group_invite",
+      senderId,
+      senderName,
+      groupId,
+      url: `/chat?tab=groups`,
+    },
+    actions: [
+      { action: "view", title: "View Groups" },
+      { action: "dismiss", title: "Later" },
+    ],
+  });
+}
+
+// Send notification for a new message in a group chat
+export async function notifyGroupMessage(
+  groupId: string,
+  groupName: string,
+  senderId: string,
+  senderName: string,
+  messagePreview: string
+): Promise<void> {
+  // Get all accepted members of this group (except the sender)
+  const { data: members, error } = await supabase
+    .from("group_chat_members")
+    .select("user_id")
+    .eq("group_id", groupId)
+    .eq("status", "accepted")
+    .neq("user_id", senderId);
+
+  if (error || !members || members.length === 0) {
+    return;
+  }
+
+  // Send notifications to all members
+  const sendPromises = members.map((member: { user_id: string }) =>
+    sendPushNotification(member.user_id, {
+      title: `New message in ${groupName}`,
+      body: `${senderName}: ${messagePreview.length > 80 ? messagePreview.slice(0, 77) + "..." : messagePreview}`,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: `group-${groupId}`,
+      requireInteraction: false,
+      data: {
+        type: "group_message",
+        senderId,
+        senderName,
+        groupId,
+        url: `/chat?group=${groupId}`,
+      },
+      actions: [
+        { action: "reply", title: "Reply" },
+        { action: "dismiss", title: "Dismiss" },
+      ],
+    })
+  );
+
+  await Promise.all(sendPromises);
 }
 
 // Send reminder notification for incomplete profiles

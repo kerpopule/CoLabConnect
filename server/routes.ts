@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { log } from "./index";
-import { notifyNewDM, notifyConnectionRequest, notifyFollowedChat } from "./pushNotifications";
+import { notifyNewDM, notifyConnectionRequest, notifyFollowedChat, notifyGroupInvite, notifyGroupMessage } from "./pushNotifications";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
@@ -681,6 +681,40 @@ export async function registerRoutes(
       res.json({ success: true, notified: notifiedCount });
     } catch (error: any) {
       log(`Mention notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification for group chat invite
+  app.post("/api/notify/group-invite", async (req, res) => {
+    try {
+      const { receiverId, senderId, senderName, groupName, groupId } = req.body;
+
+      if (!receiverId || !senderId || !senderName || !groupName || !groupId) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyGroupInvite(receiverId, senderId, senderName, groupName, groupId);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Group invite notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification for new group message
+  app.post("/api/notify/group-message", async (req, res) => {
+    try {
+      const { groupId, groupName, senderId, senderName, messagePreview } = req.body;
+
+      if (!groupId || !groupName || !senderId || !senderName) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyGroupMessage(groupId, groupName, senderId, senderName, messagePreview || "New message");
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Group message notification error: ${error.message}`);
       res.status(500).json({ error: "Internal server error" });
     }
   });

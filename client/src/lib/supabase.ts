@@ -85,3 +85,49 @@ export type PrivateMessage = {
 export function getPrivateChatId(userId1: string, userId2: string): string {
   return [userId1, userId2].sort().join('_');
 }
+
+// Group chat types
+export type GroupChat = {
+  id: string;
+  name: string | null;
+  emojis: string[];
+  created_by: string;
+  created_at: string;
+  // Joined data
+  members?: GroupChatMember[];
+  member_count?: number;
+};
+
+export type GroupChatMember = {
+  id: string;
+  group_id: string;
+  user_id: string;
+  invited_by: string | null;
+  status: 'pending' | 'accepted' | 'declined';
+  role: 'admin' | 'member';
+  joined_at: string;
+  last_read_at: string | null;
+  // Joined profile data
+  profiles?: Profile;
+};
+
+export type GroupMessage = {
+  id: string;
+  group_id: string;
+  user_id: string | null;
+  content: string;
+  created_at: string;
+  edited_at: string | null;
+  deleted_at: string | null;
+  reply_to_id: string | null;
+  reply_to_user_id: string | null;
+  // Joined profile data
+  profiles?: Profile;
+  reply_to_profile?: Profile;
+};
+
+// Helper type for group with unread count
+export type GroupChatWithUnread = GroupChat & {
+  unread_count: number;
+  latest_message_at: string | null;
+};
