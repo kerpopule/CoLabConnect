@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { QrCode, X, Share2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -103,7 +104,7 @@ export function QRCodeButton({ mode = "mobile" }: { mode?: "mobile" | "desktop" 
     );
   }
 
-  // Mobile mode uses custom bottom-right popup
+  // Mobile mode uses custom popup with portal
   return (
     <>
       {/* Trigger Button - larger and more pronounced */}
@@ -117,49 +118,57 @@ export function QRCodeButton({ mode = "mobile" }: { mode?: "mobile" | "desktop" 
         <QrCode className="text-white h-7 w-7" />
       </button>
 
-      {/* Backdrop - darkens everything */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-[51] bg-black/60 animate-in fade-in-0 duration-200"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
+      {/* Portal for backdrop and popup - renders at document body level */}
+      {createPortal(
+        <>
+          {/* Backdrop - darkens everything */}
+          {isOpen && (
+            <div
+              className="fixed inset-0 z-[9998] bg-black/60 animate-in fade-in-0 duration-200"
+              onClick={() => setIsOpen(false)}
+            />
+          )}
 
-      {/* QR Code Panel - centered on screen */}
-      <div
-        className="fixed z-[55] inset-0 flex items-center justify-center pointer-events-none"
-      >
-        <div
-          className={`w-[calc(100%-2rem)] max-w-sm bg-background border border-border rounded-2xl shadow-2xl transition-all duration-300 ease-out ${
-            isOpen
-              ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
-              : "opacity-0 translate-y-32 scale-95"
-          }`}
-        >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="font-display font-bold text-lg">Share Your Profile</h3>
-          <button
-            onClick={() => setIsOpen(false)}
-            className="p-2 rounded-full hover:bg-muted transition-colors"
+          {/* QR Code Panel - centered on screen */}
+          <div
+            className={`fixed z-[9999] inset-0 flex items-center justify-center pointer-events-none ${
+              isOpen ? "" : "hidden"
+            }`}
           >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+            <div
+              className={`w-[calc(100%-2rem)] max-w-sm bg-background border border-border rounded-2xl shadow-2xl transition-all duration-300 ease-out ${
+                isOpen
+                  ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
+                  : "opacity-0 translate-y-32 scale-95"
+              }`}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-border">
+                <h3 className="font-display font-bold text-lg">Share Your Profile</h3>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-2 rounded-full hover:bg-muted transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
 
-        {/* Content */}
-        <div className="p-4">
-          <QRContent
-            profile={profile}
-            profileUrl={profileUrl}
-            getInitials={getInitials}
-            handleShare={handleShare}
-            handleDownload={handleDownload}
-            compact
-          />
-        </div>
-        </div>
-      </div>
+              {/* Content */}
+              <div className="p-4">
+                <QRContent
+                  profile={profile}
+                  profileUrl={profileUrl}
+                  getInitials={getInitials}
+                  handleShare={handleShare}
+                  handleDownload={handleDownload}
+                  compact
+                />
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
     </>
   );
 }
