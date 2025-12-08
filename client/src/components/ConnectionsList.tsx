@@ -48,8 +48,8 @@ function ConnectionCard({
                 {getInitials(profile.name)}
               </AvatarFallback>
             </Avatar>
-            {unreadCount && unreadCount > 0 && (
-              <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+            {typeof unreadCount === "number" && unreadCount > 0 && (
+              <div className="absolute -bottom-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
                 {unreadCount > 9 ? "9+" : unreadCount}
               </div>
             )}

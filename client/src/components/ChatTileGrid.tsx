@@ -44,13 +44,6 @@ export default function ChatTileGrid({
       {/* Tile Items */}
       {items.map((item) => (
         <div key={item.id} className="relative">
-          {/* Unread Badge */}
-          {item.unreadCount && item.unreadCount > 0 && !item.isPending && (
-            <div className="absolute -top-1 -right-1 z-10 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
-              {item.unreadCount > 99 ? "99+" : item.unreadCount}
-            </div>
-          )}
-
           {/* Pending Invite Tile */}
           {item.isPending ? (
             <div className="aspect-square rounded-xl border border-primary/30 bg-primary/5 flex flex-col items-center justify-center p-3 relative overflow-hidden">
@@ -89,7 +82,7 @@ export default function ChatTileGrid({
             /* Regular Tile */
             <button
               onClick={() => onSelect(item.id)}
-              className="w-full aspect-square rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-2 hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all cursor-pointer"
+              className="w-full aspect-square rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-2 hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all cursor-pointer relative"
             >
               {/* Emoji Display */}
               <div className="text-3xl sm:text-4xl">
@@ -100,6 +93,12 @@ export default function ChatTileGrid({
               <span className="text-sm font-medium text-center px-2 line-clamp-2">
                 {item.name}
               </span>
+              {/* Unread Badge - inside tile, bottom right */}
+              {typeof item.unreadCount === "number" && item.unreadCount > 0 && (
+                <div className="absolute bottom-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+                  {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                </div>
+              )}
             </button>
           )}
         </div>
