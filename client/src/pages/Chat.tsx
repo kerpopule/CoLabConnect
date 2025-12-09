@@ -524,10 +524,23 @@ export default function Chat() {
       }
     }
 
-    // Force refetch since topics query has staleTime: Infinity
-    console.log('[Topic Reorder] Refetching topics...');
-    await queryClient.refetchQueries({ queryKey: ["topics"] });
-    console.log('[Topic Reorder] Refetch complete');
+    // Force fresh data by removing old cache and refetching
+    console.log('[Topic Reorder] Invalidating and refetching topics...');
+    queryClient.removeQueries({ queryKey: ["topics"] });
+    await queryClient.prefetchQuery({
+      queryKey: ["topics"],
+      queryFn: async () => {
+        const { data, error } = await supabase
+          .from("topics")
+          .select("*")
+          .order("display_order", { ascending: true });
+        if (error) throw error;
+        console.log('[Topic Reorder] Fresh data from DB:', data);
+        return data as Topic[];
+      },
+    });
+    const newTopics = queryClient.getQueryData(["topics"]);
+    console.log('[Topic Reorder] New cached data:', newTopics);
     toast({
       title: "Topic order saved",
       description: "All users will now see topics in this order.",
