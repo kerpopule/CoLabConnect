@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, X, FileText } from "lucide-react";
+import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, UserMinus, X, FileText, Shield } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Topic, Message, Profile, PrivateMessage, getPrivateChatId, GroupChat, GroupMessage, GroupChatMember } from "@/lib/supabase";
@@ -27,13 +27,16 @@ type AIMessage = {
   created_at: string;
 };
 
+// Admin email for general topics management
+const GENERAL_TOPICS_ADMIN_EMAIL = "steve.darlow@gmail.com";
+
 // Fallback topics when database is empty - MUST match TOPIC_ORDER below
-// Order: General, Hiring, Fundraising, Tech, Events (Events last and will be wide)
+// Order: General, Hiring, Fundraising, Bugs & Requests, Events (Events last and will be wide)
 const FALLBACK_TOPICS = [
   { id: "general", slug: "general", name: "General", icon: "💬", description: "", created_at: "" },
   { id: "hiring", slug: "hiring", name: "Hiring", icon: "💼", description: "", created_at: "" },
   { id: "fundraising", slug: "fundraising", name: "Fundraising", icon: "💰", description: "", created_at: "" },
-  { id: "tech", slug: "tech", name: "Tech", icon: "💻", description: "", created_at: "" },
+  { id: "bugs-requests", slug: "bugs-requests", name: "Bugs & Requests", icon: "🐛", description: "", created_at: "" },
   { id: "events", slug: "events", name: "Events", icon: "📅", description: "", created_at: "" },
 ];
 
@@ -109,12 +112,26 @@ export default function Chat() {
   const [showAdminTransfer, setShowAdminTransfer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Topic admin state
+  const [topicToManage, setTopicToManage] = useState<{ id: string; name: string; icon: string } | null>(null);
+  const [showTopicManageModal, setShowTopicManageModal] = useState(false);
+  const [topicEditName, setTopicEditName] = useState("");
+  const [topicEditIcon, setTopicEditIcon] = useState("");
+  const [showTopicMembers, setShowTopicMembers] = useState(false);
+  const [showKickConfirm, setShowKickConfirm] = useState<{ userId: string; userName: string } | null>(null);
+
   // Image/file upload state (for previewing before send)
   const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([]);
   const [pendingFiles, setPendingFiles] = useState<{ file: File; fileName: string }[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
 
   const { user, profile: currentUserProfile, loading: authLoading } = useAuth();
+  const isGeneralTopicAdmin = user?.email?.toLowerCase() === GENERAL_TOPICS_ADMIN_EMAIL.toLowerCase();
+
+  // Debug logging for admin check
+  if (user?.email) {
+    console.log('[Admin Check] User email:', user.email, 'Is admin:', isGeneralTopicAdmin);
+  }
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const scrollViewportRef = useRef<HTMLDivElement>(null);
@@ -206,6 +223,182 @@ export default function Chat() {
     setTimeout(() => {
       inputRef.current?.focus();
     }, 50);
+  };
+
+  // Fetch kicked users for current topic (for admin)
+  const { data: kickedTopicUsers = [] } = useQuery({
+    queryKey: ["kicked-topic-users", activeTopic],
+    queryFn: async () => {
+      if (!activeTopic) return [];
+      const { data, error } = await supabase
+        .from("kicked_topic_users")
+        .select("user_id, profiles:user_id(id, name, avatar_url)")
+        .eq("topic_id", activeTopic);
+      if (error) {
+        console.error("Error fetching kicked users:", error);
+        return [];
+      }
+      return data || [];
+    },
+    enabled: !!activeTopic && isGeneralTopicAdmin,
+  });
+
+  // Check if current user is kicked from active topic
+  const { data: isKickedFromTopic = false } = useQuery({
+    queryKey: ["am-i-kicked", activeTopic, user?.id],
+    queryFn: async () => {
+      if (!activeTopic || !user) return false;
+      const { data, error } = await supabase
+        .from("kicked_topic_users")
+        .select("id")
+        .eq("topic_id", activeTopic)
+        .eq("user_id", user.id)
+        .single();
+      if (error && error.code !== "PGRST116") {
+        console.error("Error checking kick status:", error);
+      }
+      return !!data;
+    },
+    enabled: !!activeTopic && !!user,
+  });
+
+  // Kick user from topic (admin only)
+  const handleKickFromTopic = async (userId: string, userName: string) => {
+    if (!isGeneralTopicAdmin || !activeTopic || !user) return;
+    const { error } = await supabase
+      .from("kicked_topic_users")
+      .insert({
+        topic_id: activeTopic,
+        user_id: userId,
+        kicked_by: user.id,
+      });
+    if (error) {
+      console.error("Error kicking user:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to kick user",
+        description: error.message,
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["kicked-topic-users", activeTopic] });
+    toast({
+      title: "User kicked",
+      description: `${userName} has been kicked from this topic.`,
+    });
+    setShowKickConfirm(null);
+  };
+
+  // Invite user back to topic (admin only)
+  const handleInviteBackToTopic = async (userId: string, userName: string) => {
+    if (!isGeneralTopicAdmin || !activeTopic) return;
+    const { error } = await supabase
+      .from("kicked_topic_users")
+      .delete()
+      .eq("topic_id", activeTopic)
+      .eq("user_id", userId);
+    if (error) {
+      console.error("Error inviting user back:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to invite user back",
+        description: error.message,
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["kicked-topic-users", activeTopic] });
+    toast({
+      title: "User invited back",
+      description: `${userName} can now participate in this topic again.`,
+    });
+  };
+
+  // Delete any message (admin only)
+  const handleAdminDeleteMessage = async (messageId: string) => {
+    if (!isGeneralTopicAdmin) return;
+    const { error } = await supabase
+      .from("messages")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", messageId);
+    if (error) {
+      console.error("Error deleting message:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to delete message",
+        description: error.message,
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["messages", activeTopic] });
+    toast({
+      title: "Message deleted",
+      description: "The message has been removed.",
+    });
+  };
+
+  // Update topic (admin only)
+  const handleUpdateTopic = async () => {
+    if (!isGeneralTopicAdmin || !topicToManage) return;
+    const { error } = await supabase
+      .from("topics")
+      .update({
+        name: topicEditName.trim(),
+        icon: topicEditIcon.trim(),
+      })
+      .eq("id", topicToManage.id);
+    if (error) {
+      console.error("Error updating topic:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update topic",
+        description: error.message,
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["topics"] });
+    toast({
+      title: "Topic updated",
+      description: `Topic renamed to "${topicEditName}".`,
+    });
+    setShowTopicManageModal(false);
+    setTopicToManage(null);
+  };
+
+  // Delete topic (admin only)
+  const handleDeleteTopic = async () => {
+    if (!isGeneralTopicAdmin || !topicToManage) return;
+    const { error } = await supabase
+      .from("topics")
+      .delete()
+      .eq("id", topicToManage.id);
+    if (error) {
+      console.error("Error deleting topic:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to delete topic",
+        description: error.message,
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["topics"] });
+    toast({
+      title: "Topic deleted",
+      description: `Topic "${topicToManage.name}" has been deleted.`,
+    });
+    setShowTopicManageModal(false);
+    setTopicToManage(null);
+  };
+
+  // Handle long press on topic tile (admin only)
+  const handleTopicLongPress = (topicId: string) => {
+    if (!isGeneralTopicAdmin) return;
+    const topic = displayTopics.find((t) => t.id === topicId);
+    if (topic) {
+      setTopicToManage({ id: topic.id, name: topic.name, icon: topic.icon || "💬" });
+      setTopicEditName(topic.name);
+      setTopicEditIcon(topic.icon || "💬");
+      setShowTopicManageModal(true);
+    }
   };
 
   // Topic follow for notifications
@@ -381,8 +574,8 @@ export default function Chat() {
     }
   }, [dmUserId, groupIdFromUrl, tabFromUrl, markMessagesAsRead, markGroupAsRead]);
 
-  /// Custom topic order: General, Hiring, Fundraising, Tech, Events (Events last for wide tile)
-  const TOPIC_ORDER = ["general", "hiring", "fundraising", "tech", "events"];
+  /// Custom topic order: General, Hiring, Fundraising, Bugs & Requests, Events (Events last for wide tile)
+  const TOPIC_ORDER = ["general", "hiring", "fundraising", "bugs-requests", "events"];
 
   // Fetch topics
   const { data: topics, isLoading: topicsLoading } = useQuery({
@@ -2437,6 +2630,16 @@ export default function Chat() {
                 <>
                   <span className="text-xl">{currentTopic.icon || "💬"}</span>
                   <span className="font-medium truncate">{currentTopic.name}</span>
+                  {/* Admin button to manage kicked users */}
+                  {isGeneralTopicAdmin && (
+                    <button
+                      onClick={() => setShowTopicMembers(true)}
+                      className="ml-auto p-2 rounded-full hover:bg-muted transition-colors"
+                      title="Manage members"
+                    >
+                      <Shield className="h-4 w-4 text-primary" />
+                    </button>
+                  )}
                 </>
               )}
               {activeTab === "dms" && activeDmProfile && (
@@ -2581,6 +2784,7 @@ export default function Chat() {
                   isWide: t.slug === "events" || t.name.toLowerCase() === "events",
                 }))}
                 onSelect={handleSelectTopic}
+                onLongPress={isGeneralTopicAdmin ? handleTopicLongPress : undefined}
               />
             )}
 
@@ -2742,6 +2946,9 @@ export default function Chat() {
                       ? handleDeleteGroupMessage
                       : handleDeleteMessage;
 
+                    // Check if this is a general topic (not private chat, not group chat)
+                    const isGeneralTopic = !isPrivateChat && !isGroupChat && activeTab === "general";
+
                     return (
                       <MessageWrapper
                         key={msg.id}
@@ -2761,6 +2968,9 @@ export default function Chat() {
                         isGroupChat={isGroupChat}
                         isAdmin={isCurrentUserGroupAdmin}
                         onKick={handleKickMember}
+                        isTopicAdmin={isGeneralTopic && isGeneralTopicAdmin && !isOwn}
+                        onTopicAdminDelete={isGeneralTopic && isGeneralTopicAdmin ? handleAdminDeleteMessage : undefined}
+                        onTopicAdminKick={isGeneralTopic && isGeneralTopicAdmin ? (userId: string, userName: string) => setShowKickConfirm({ userId, userName }) : undefined}
                       >
                         <div className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}>
                           <Avatar className="w-8 h-8 shrink-0">
@@ -2867,8 +3077,17 @@ export default function Chat() {
 
             {/* Input Area */}
             <div className="shrink-0 px-3 py-2 pb-safe md:px-4 md:py-3 bg-card border-t border-border sticky bottom-0">
+              {/* Kicked from topic message */}
+              {activeTab === "general" && isKickedFromTopic && (
+                <div className="text-center py-4">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
+                    <UserMinus className="h-4 w-4" />
+                    <span className="text-sm font-medium">You have been removed from this topic</span>
+                  </div>
+                </div>
+              )}
               {/* Image and file previews before sending */}
-              {(pendingImages.length > 0 || pendingFiles.length > 0) && (
+              {!isKickedFromTopic && (pendingImages.length > 0 || pendingFiles.length > 0) && (
                 <div className="mb-3 flex gap-2 flex-wrap items-end">
                   {/* Image previews */}
                   {pendingImages.map((img, idx) => (
@@ -2906,6 +3125,8 @@ export default function Chat() {
                   ))}
                 </div>
               )}
+              {/* Hide form when kicked from topic */}
+              {!(activeTab === "general" && isKickedFromTopic) && (
               <form onSubmit={handleSend} className="flex gap-2 items-center relative">
                 {isAiChat ? (
                   <Button
@@ -3005,6 +3226,7 @@ export default function Chat() {
                   )}
                 </Button>
               </form>
+              )}
             </div>
           </>
         )}
@@ -3283,6 +3505,158 @@ export default function Chat() {
                   className="flex-1 p-3 rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors font-medium"
                 >
                   Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Topic Management Modal (Admin Only) */}
+      {showTopicManageModal && topicToManage && isGeneralTopicAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              setShowTopicManageModal(false);
+              setTopicToManage(null);
+            }}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="p-6">
+              <h2 className="text-lg font-semibold mb-4">Manage Topic</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Emoji</label>
+                  <Input
+                    value={topicEditIcon}
+                    onChange={(e) => setTopicEditIcon(e.target.value)}
+                    placeholder="💬"
+                    className="mt-1"
+                    maxLength={4}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Name</label>
+                  <Input
+                    value={topicEditName}
+                    onChange={(e) => setTopicEditName(e.target.value)}
+                    placeholder="Topic name"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowTopicManageModal(false);
+                    setTopicToManage(null);
+                  }}
+                  className="flex-1 p-3 rounded-xl border border-border hover:bg-muted transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateTopic}
+                  className="flex-1 p-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-colors font-medium"
+                >
+                  Save
+                </button>
+              </div>
+              <button
+                onClick={handleDeleteTopic}
+                className="w-full mt-3 p-3 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors font-medium"
+              >
+                Delete Topic
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Topic Members Modal (Admin Only) */}
+      {showTopicMembers && activeTopic && isGeneralTopicAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowTopicMembers(false)}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden max-h-[80vh]">
+            <div className="p-4 border-b border-border flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Kicked Users</h2>
+              <button
+                onClick={() => setShowTopicMembers(false)}
+                className="p-2 rounded-full hover:bg-muted transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {kickedTopicUsers.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  No kicked users in this topic.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {kickedTopicUsers.map((kicked: any) => (
+                    <div
+                      key={kicked.user_id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-muted/50"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={kicked.profiles?.avatar_url} />
+                          <AvatarFallback>
+                            {kicked.profiles?.name?.charAt(0) || "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="font-medium">{kicked.profiles?.name || "Unknown"}</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleInviteBackToTopic(kicked.user_id, kicked.profiles?.name || "User")}
+                      >
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        Invite Back
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kick User Confirmation (Admin Only) */}
+      {showKickConfirm && isGeneralTopicAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowKickConfirm(null)}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/10 flex items-center justify-center">
+                <UserMinus className="h-8 w-8 text-red-500" />
+              </div>
+              <h2 className="text-lg font-semibold mb-2">Kick User?</h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Are you sure you want to kick {showKickConfirm.userName} from this topic? They won't be able to see or send messages until you invite them back.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowKickConfirm(null)}
+                  className="flex-1 p-3 rounded-xl border border-border hover:bg-muted transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleKickFromTopic(showKickConfirm.userId, showKickConfirm.userName)}
+                  className="flex-1 p-3 rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors font-medium"
+                >
+                  Kick
                 </button>
               </div>
             </div>

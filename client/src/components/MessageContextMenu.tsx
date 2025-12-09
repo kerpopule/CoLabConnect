@@ -240,6 +240,10 @@ interface MessageWrapperProps {
   isGroupChat?: boolean;
   isAdmin?: boolean;
   onKick?: (userId: string, userName: string) => Promise<void>;
+  // Topic admin functionality (general topics)
+  isTopicAdmin?: boolean;
+  onTopicAdminDelete?: (messageId: string) => Promise<void>;
+  onTopicAdminKick?: (userId: string, userName: string) => void;
 }
 
 export function MessageWrapper({
@@ -260,6 +264,9 @@ export function MessageWrapper({
   isGroupChat = false,
   isAdmin = false,
   onKick,
+  isTopicAdmin = false,
+  onTopicAdminDelete,
+  onTopicAdminKick,
 }: MessageWrapperProps) {
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -424,6 +431,39 @@ export function MessageWrapper({
                 >
                   <UserMinus className="h-4 w-4" />
                   Kick
+                </Button>
+              )}
+              {/* Topic admin actions: Kick & Delete */}
+              {isTopicAdmin && senderId && senderName && onTopicAdminKick && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    onTopicAdminKick(senderId, senderName);
+                    setShowActions(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <UserMinus className="h-4 w-4" />
+                  Kick
+                </Button>
+              )}
+              {isTopicAdmin && onTopicAdminDelete && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={async () => {
+                    try {
+                      await onTopicAdminDelete(messageId);
+                    } catch (error) {
+                      console.error("Failed to delete:", error);
+                    }
+                    setShowActions(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
                 </Button>
               )}
             </>
