@@ -381,6 +381,146 @@ export async function registerRoutes(
     }
   });
 
+  // Update topic details (admin only - uses service role key to bypass RLS)
+  app.put("/api/topics/:topicId", async (req, res) => {
+    try {
+      const { topicId } = req.params;
+      const { name, icon, adminEmail } = req.body;
+
+      // Verify admin email
+      if (adminEmail?.toLowerCase() !== "steve.darlow@gmail.com") {
+        return res.status(403).json({ error: "Only admin can update topics" });
+      }
+
+      if (!name?.trim()) {
+        return res.status(400).json({ error: "Topic name is required" });
+      }
+
+      log(`[Topic Update] Admin updating topic ${topicId}`);
+
+      const { error } = await supabase
+        .from("topics")
+        .update({
+          name: name.trim(),
+          icon: icon?.trim() || "💬"
+        })
+        .eq("id", topicId);
+
+      if (error) {
+        log(`[Topic Update] Error: ${error.message}`);
+        return res.status(500).json({ error: `Failed to update topic: ${error.message}` });
+      }
+
+      // Fetch and return all updated topics
+      const { data: updatedTopics, error: fetchError } = await supabase
+        .from("topics")
+        .select("*")
+        .order("display_order", { ascending: true });
+
+      if (fetchError) {
+        log(`[Topic Update] Error fetching topics: ${fetchError.message}`);
+        return res.status(500).json({ error: "Failed to fetch updated topics" });
+      }
+
+      log(`[Topic Update] Successfully updated topic ${topicId}`);
+      res.json({ success: true, topics: updatedTopics });
+    } catch (error: any) {
+      log(`[Topic Update] Error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete topic (admin only - uses service role key to bypass RLS)
+  app.delete("/api/topics/:topicId", async (req, res) => {
+    try {
+      const { topicId } = req.params;
+      const adminEmail = req.query.adminEmail as string;
+
+      // Verify admin email
+      if (adminEmail?.toLowerCase() !== "steve.darlow@gmail.com") {
+        return res.status(403).json({ error: "Only admin can delete topics" });
+      }
+
+      log(`[Topic Delete] Admin deleting topic ${topicId}`);
+
+      const { error } = await supabase
+        .from("topics")
+        .delete()
+        .eq("id", topicId);
+
+      if (error) {
+        log(`[Topic Delete] Error: ${error.message}`);
+        return res.status(500).json({ error: `Failed to delete topic: ${error.message}` });
+      }
+
+      // Fetch and return remaining topics
+      const { data: remainingTopics, error: fetchError } = await supabase
+        .from("topics")
+        .select("*")
+        .order("display_order", { ascending: true });
+
+      if (fetchError) {
+        log(`[Topic Delete] Error fetching topics: ${fetchError.message}`);
+        return res.status(500).json({ error: "Failed to fetch remaining topics" });
+      }
+
+      log(`[Topic Delete] Successfully deleted topic ${topicId}`);
+      res.json({ success: true, topics: remainingTopics });
+    } catch (error: any) {
+      log(`[Topic Delete] Error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create topic (admin only - uses service role key to bypass RLS)
+  app.post("/api/topics", async (req, res) => {
+    try {
+      const { name, icon, slug, display_order, adminEmail } = req.body;
+
+      // Verify admin email
+      if (adminEmail?.toLowerCase() !== "steve.darlow@gmail.com") {
+        return res.status(403).json({ error: "Only admin can create topics" });
+      }
+
+      if (!name?.trim()) {
+        return res.status(400).json({ error: "Topic name is required" });
+      }
+
+      log(`[Topic Create] Admin creating topic: ${name}`);
+
+      const { error } = await supabase
+        .from("topics")
+        .insert({
+          name: name.trim(),
+          icon: icon?.trim() || "💬",
+          slug: slug,
+          display_order: display_order || 0
+        });
+
+      if (error) {
+        log(`[Topic Create] Error: ${error.message}`);
+        return res.status(500).json({ error: `Failed to create topic: ${error.message}` });
+      }
+
+      // Fetch and return all topics
+      const { data: allTopics, error: fetchError } = await supabase
+        .from("topics")
+        .select("*")
+        .order("display_order", { ascending: true });
+
+      if (fetchError) {
+        log(`[Topic Create] Error fetching topics: ${fetchError.message}`);
+        return res.status(500).json({ error: "Failed to fetch topics" });
+      }
+
+      log(`[Topic Create] Successfully created topic: ${name}`);
+      res.json({ success: true, topics: allTopics });
+    } catch (error: any) {
+      log(`[Topic Create] Error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Check if following a topic
   app.get("/api/topics/:topicId/following", async (req, res) => {
     try {

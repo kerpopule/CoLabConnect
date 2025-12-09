@@ -382,56 +382,85 @@ export default function Chat() {
   // Update topic (admin only)
   const handleUpdateTopic = async () => {
     if (!isGeneralTopicAdmin || !topicToManage) return;
-    const { error } = await supabase
-      .from("topics")
-      .update({
-        name: topicEditName.trim(),
-        icon: topicEditIcon.trim(),
-      })
-      .eq("id", topicToManage.id);
-    if (error) {
+
+    try {
+      const response = await fetch(`/api/topics/${topicToManage.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: topicEditName.trim(),
+          icon: topicEditIcon.trim(),
+          adminEmail: user?.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error("Error updating topic:", result.error);
+        toast({
+          variant: "destructive",
+          title: "Failed to update topic",
+          description: result.error || "Unknown error",
+        });
+        return;
+      }
+
+      // Update cache with fresh data from server
+      queryClient.setQueryData(["topics"], result.topics);
+      toast({
+        title: "Topic updated",
+        description: `Topic renamed to "${topicEditName}".`,
+      });
+      setShowTopicManageModal(false);
+      setTopicToManage(null);
+    } catch (error: any) {
       console.error("Error updating topic:", error);
       toast({
         variant: "destructive",
         title: "Failed to update topic",
-        description: error.message,
+        description: "Network error - please try again",
       });
-      return;
     }
-    // Force refetch since topics query has staleTime: Infinity
-    await queryClient.refetchQueries({ queryKey: ["topics"] });
-    toast({
-      title: "Topic updated",
-      description: `Topic renamed to "${topicEditName}".`,
-    });
-    setShowTopicManageModal(false);
-    setTopicToManage(null);
   };
 
   // Delete topic (admin only)
   const handleDeleteTopic = async () => {
     if (!isGeneralTopicAdmin || !topicToManage) return;
-    const { error } = await supabase
-      .from("topics")
-      .delete()
-      .eq("id", topicToManage.id);
-    if (error) {
+
+    try {
+      const response = await fetch(`/api/topics/${topicToManage.id}?adminEmail=${encodeURIComponent(user?.email || "")}`, {
+        method: "DELETE",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error("Error deleting topic:", result.error);
+        toast({
+          variant: "destructive",
+          title: "Failed to delete topic",
+          description: result.error || "Unknown error",
+        });
+        return;
+      }
+
+      // Update cache with remaining topics from server
+      queryClient.setQueryData(["topics"], result.topics);
+      toast({
+        title: "Topic deleted",
+        description: `Topic "${topicToManage.name}" has been deleted.`,
+      });
+      setShowTopicManageModal(false);
+      setTopicToManage(null);
+    } catch (error: any) {
       console.error("Error deleting topic:", error);
       toast({
         variant: "destructive",
         title: "Failed to delete topic",
-        description: error.message,
+        description: "Network error - please try again",
       });
-      return;
     }
-    // Force refetch since topics query has staleTime: Infinity
-    await queryClient.refetchQueries({ queryKey: ["topics"] });
-    toast({
-      title: "Topic deleted",
-      description: `Topic "${topicToManage.name}" has been deleted.`,
-    });
-    setShowTopicManageModal(false);
-    setTopicToManage(null);
   };
 
   // Handle long press on topic tile (admin only)
@@ -446,43 +475,54 @@ export default function Chat() {
     }
   };
 
-  // Create new topic (admin only)
+  // Create new topic (admin only) - uses server API to bypass RLS
   const handleCreateTopic = async () => {
     if (!isGeneralTopicAdmin || !newTopicName.trim()) return;
 
     // Get the max display_order
     const maxOrder = displayTopics.reduce((max, t) => Math.max(max, t.display_order || 0), 0);
 
-    const slug = newTopicName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-
-    const { error } = await supabase
-      .from("topics")
-      .insert({
-        name: newTopicName.trim(),
-        icon: newTopicIcon.trim() || "💬",
-        slug,
-        display_order: maxOrder + 1,
+    try {
+      const response = await fetch("/api/topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newTopicName.trim(),
+          icon: newTopicIcon.trim() || "💬",
+          displayOrder: maxOrder + 1,
+          adminEmail: user?.email,
+        }),
       });
 
-    if (error) {
-      console.error("Error creating topic:", error);
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error("Error creating topic:", result.error);
+        toast({
+          variant: "destructive",
+          title: "Failed to create topic",
+          description: result.error || "Unknown error",
+        });
+        return;
+      }
+
+      // Update cache directly with fresh topics list
+      queryClient.setQueryData(["topics"], result.topics);
+      toast({
+        title: "Topic created",
+        description: `Topic "${newTopicName}" has been created.`,
+      });
+      setShowCreateTopic(false);
+      setNewTopicName("");
+      setNewTopicIcon("");
+    } catch (error) {
+      console.error("Network error creating topic:", error);
       toast({
         variant: "destructive",
         title: "Failed to create topic",
-        description: error.message,
+        description: "Network error. Please try again.",
       });
-      return;
     }
-
-    // Force refetch since topics query has staleTime: Infinity
-    await queryClient.refetchQueries({ queryKey: ["topics"] });
-    toast({
-      title: "Topic created",
-      description: `Topic "${newTopicName}" has been created.`,
-    });
-    setShowCreateTopic(false);
-    setNewTopicName("");
-    setNewTopicIcon("");
   };
 
   // Start reordering topics (admin only)
