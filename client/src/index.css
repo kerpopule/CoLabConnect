@@ -216,15 +216,53 @@ label {
     left: 0;
   }
 
-  /* Hide mobile nav when keyboard is open - multiple selectors for reliability */
+  /* Hide mobile nav when keyboard is open - aggressive rules for iOS */
   body.keyboard-open nav.mobile-nav,
-  body.keyboard-open nav,
+  body.keyboard-open nav:not(.md\\:flex),
   body[data-keyboard="open"] nav.mobile-nav,
-  body[data-keyboard="open"] nav {
-    transform: translateY(100%) !important;
+  body[data-keyboard="open"] nav:not(.md\\:flex),
+  html body.keyboard-open nav,
+  html body[data-keyboard="open"] nav {
+    transform: translateY(200%) !important;
     opacity: 0 !important;
     pointer-events: none !important;
     visibility: hidden !important;
+    display: none !important;
+  }
+}
+
+/* Portrait lock for mobile phones only (not tablets) */
+@media screen and (max-width: 480px) and (orientation: landscape) {
+  html::before {
+    content: "Please rotate your device to portrait mode";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 1.25rem;
+    padding: 2rem;
+    z-index: 99999;
+  }
+
+  html::after {
+    content: "📱↻";
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, calc(-50% + 3rem));
+    font-size: 3rem;
+    z-index: 99999;
+  }
+
+  body {
+    overflow: hidden !important;
   }
 }
 

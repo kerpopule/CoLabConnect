@@ -121,10 +121,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // Detect keyboard visibility on mobile (for hiding tab bar)
   useEffect(() => {
     // Use multiple detection methods for better iOS compatibility
+    let lastFocusedInput: HTMLElement | null = null;
 
     const setKeyboardState = (isOpen: boolean) => {
+      console.log('[Layout] setKeyboardState:', isOpen);
       setIsKeyboardOpen(isOpen);
-      // Also add/remove body class AND data attribute for CSS-based hiding (more reliable on iOS)
+      // Also add/remove body class AND data attribute for CSS-based hiding
       if (isOpen) {
         document.body.classList.add('keyboard-open');
         document.body.setAttribute('data-keyboard', 'open');
@@ -134,10 +136,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
       }
     };
 
+    // Check if an input is currently focused
+    const isInputFocused = () => {
+      const activeEl = document.activeElement as HTMLElement;
+      if (!activeEl) return false;
+      return activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable;
+    };
+
     // Method 1: Track focus on text inputs
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        lastFocusedInput = target;
         setKeyboardState(true);
       }
     };
@@ -146,32 +156,55 @@ export function Layout({ children }: { children: React.ReactNode }) {
       const relatedTarget = e.relatedTarget as HTMLElement | null;
       // Only close if not focusing another input
       if (!relatedTarget || (relatedTarget.tagName !== 'INPUT' && relatedTarget.tagName !== 'TEXTAREA' && !relatedTarget.isContentEditable)) {
-        // Small delay to handle iOS quirks
+        // Delay to handle iOS quirks with keyboard transitions
         setTimeout(() => {
-          const activeEl = document.activeElement;
-          if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA' && !(activeEl as HTMLElement).isContentEditable)) {
+          if (!isInputFocused()) {
+            lastFocusedInput = null;
             setKeyboardState(false);
           }
-        }, 100);
+        }, 150);
       }
     };
 
-    // Method 2: VisualViewport API (backup for Android/newer iOS)
+    // Method 2: VisualViewport API - primary method for iOS
     const handleViewportResize = () => {
       if (window.visualViewport) {
-        const isKeyboard = window.visualViewport.height < window.innerHeight * 0.75;
+        // On iOS, when keyboard opens, visualViewport.height shrinks
+        const viewportHeight = window.visualViewport.height;
+        const windowHeight = window.innerHeight;
+        const ratio = viewportHeight / windowHeight;
+
+        // Keyboard is likely open if viewport is less than 85% of window
+        // (more aggressive threshold than before)
+        const isKeyboard = ratio < 0.85;
+
+        console.log('[Layout] Viewport resize:', { viewportHeight, windowHeight, ratio, isKeyboard });
+
+        // Always trust the viewport on iOS - it's the most reliable
         setKeyboardState(isKeyboard);
+      }
+    };
+
+    // Also check on scroll (iOS sometimes doesn't fire resize properly)
+    const handleScroll = () => {
+      if (window.visualViewport && isInputFocused()) {
+        const ratio = window.visualViewport.height / window.innerHeight;
+        if (ratio < 0.85) {
+          setKeyboardState(true);
+        }
       }
     };
 
     document.addEventListener('focusin', handleFocusIn);
     document.addEventListener('focusout', handleFocusOut);
     window.visualViewport?.addEventListener('resize', handleViewportResize);
+    window.visualViewport?.addEventListener('scroll', handleScroll);
 
     return () => {
       document.removeEventListener('focusin', handleFocusIn);
       document.removeEventListener('focusout', handleFocusOut);
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
+      window.visualViewport?.removeEventListener('scroll', handleScroll);
       document.body.classList.remove('keyboard-open');
       document.body.removeAttribute('data-keyboard');
     };

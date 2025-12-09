@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Image, X, Loader2, FileText, Download, Paperclip } from "lucide-react";
+import { X, Loader2, FileText, Download, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,69 +20,101 @@ interface ChatImageUploadProps {
 // Max file size: 3MB
 const MAX_FILE_SIZE = 3 * 1024 * 1024;
 
-// Allowed file types
-const ALLOWED_FILE_TYPES = [
-  // Images
-  "image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif",
-  // Documents
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "text/plain",
-  "text/csv",
-];
+// Check if file is an image based on type OR extension (for iOS compatibility)
+function isImageFile(file: File): boolean {
+  // Check MIME type first
+  if (file.type.startsWith("image/")) {
+    return true;
+  }
+  // Fallback: check file extension (iOS sometimes doesn't set MIME type correctly)
+  const ext = file.name.toLowerCase().split('.').pop();
+  return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff'].includes(ext || '');
+}
 
-// File extensions for accept attribute
+// Check if file type is allowed
+function isAllowedFile(file: File): boolean {
+  // Images are always allowed
+  if (isImageFile(file)) return true;
+
+  // Check MIME type for documents
+  const allowedMimeTypes = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+    "text/csv",
+  ];
+  if (allowedMimeTypes.includes(file.type)) return true;
+
+  // Fallback: check extension
+  const ext = file.name.toLowerCase().split('.').pop();
+  return ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv'].includes(ext || '');
+}
+
+// File extensions for accept attribute - simplified for iOS compatibility
 const ACCEPT_TYPES = "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv";
 
 // Compress image before upload - exported for use in Chat.tsx
 export async function compressImage(file: File, maxSize: number = 1200, quality: number = 0.8): Promise<Blob> {
   return new Promise((resolve, reject) => {
+    // For HEIC/HEIF, we need to try a different approach
+    const isHeic = file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = document.createElement("img");
       img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let { width, height } = img;
+        try {
+          const canvas = document.createElement("canvas");
+          let { width, height } = img;
 
-        // Scale down if larger than maxSize
-        if (width > maxSize || height > maxSize) {
-          if (width > height) {
-            height = (height / width) * maxSize;
-            width = maxSize;
-          } else {
-            width = (width / height) * maxSize;
-            height = maxSize;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Canvas context not available"));
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              resolve(blob);
+          // Scale down if larger than maxSize
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = (height / width) * maxSize;
+              width = maxSize;
             } else {
-              reject(new Error("Failed to compress image"));
+              width = (width / height) * maxSize;
+              height = maxSize;
             }
-          },
-          "image/jpeg",
-          quality
-        );
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Canvas context not available"));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve(blob);
+              } else {
+                reject(new Error("Failed to compress image"));
+              }
+            },
+            "image/jpeg",
+            quality
+          );
+        } catch (err) {
+          reject(err);
+        }
       };
-      img.onerror = () => reject(new Error("Failed to load image"));
+      img.onerror = (err) => {
+        console.error("[compressImage] Image load error:", err);
+        reject(new Error("Failed to load image for compression"));
+      };
       img.src = e.target?.result as string;
     };
-    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.onerror = (err) => {
+      console.error("[compressImage] FileReader error:", err);
+      reject(new Error("Failed to read file"));
+    };
     reader.readAsDataURL(file);
   });
 }
@@ -103,10 +135,27 @@ export function ChatImageUpload({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || !user) return;
+    console.log("[ChatImageUpload] handleFileSelect triggered");
 
-    // Reset input
+    const files = e.target.files;
+    console.log("[ChatImageUpload] Files:", files?.length, "User:", user?.id);
+
+    if (!files || files.length === 0) {
+      console.log("[ChatImageUpload] No files selected");
+      return;
+    }
+
+    if (!user) {
+      console.error("[ChatImageUpload] No user - cannot process files");
+      toast({
+        variant: "destructive",
+        title: "Not signed in",
+        description: "Please sign in to upload files.",
+      });
+      return;
+    }
+
+    // Reset input so same file can be selected again
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -114,67 +163,80 @@ export function ChatImageUpload({
     // Process each file
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const isImage = file.type.startsWith("image/");
+      console.log("[ChatImageUpload] Processing file:", {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        isImage: isImageFile(file)
+      });
+
+      const isImage = isImageFile(file);
 
       // Validate file type
-      if (!isImage && !ALLOWED_FILE_TYPES.includes(file.type)) {
+      if (!isAllowedFile(file)) {
+        console.log("[ChatImageUpload] File type not allowed:", file.type);
         toast({
           variant: "destructive",
           title: "Unsupported file type",
-          description: "Please select an image, PDF, Word, Excel, or text file.",
+          description: `Cannot upload "${file.name}". Please select an image, PDF, Word, Excel, or text file.`,
         });
         continue;
       }
 
       // Max 3MB for files
       if (file.size > MAX_FILE_SIZE) {
+        console.log("[ChatImageUpload] File too large:", file.size);
         toast({
           variant: "destructive",
           title: "File too large",
-          description: "Maximum file size is 3MB.",
+          description: `"${file.name}" is too large. Maximum file size is 3MB.`,
         });
         continue;
       }
 
-      // If using new API (onImageSelected/onFileSelected), compress and create preview
+      // Handle images with the new API
       if (isImage && onImageSelected) {
+        console.log("[ChatImageUpload] Processing image for preview...");
         try {
-          // Try to compress image to JPEG for reliable preview (handles HEIC, etc.)
+          // Try to compress image to JPEG for reliable preview
           const compressedBlob = await compressImage(file);
-          // Create a new File from the compressed blob
-          const compressedFile = new File([compressedBlob], file.name.replace(/\.[^.]+$/, '.jpg'), {
-            type: 'image/jpeg'
-          });
+          const compressedFile = new File(
+            [compressedBlob],
+            file.name.replace(/\.[^.]+$/, '.jpg'),
+            { type: 'image/jpeg' }
+          );
           const previewUrl = URL.createObjectURL(compressedBlob);
-          console.log('[ChatImageUpload] Image compressed successfully, preview URL:', previewUrl);
+          console.log("[ChatImageUpload] Image compressed successfully, calling onImageSelected");
           onImageSelected(compressedFile, previewUrl);
         } catch (error) {
-          console.error("[ChatImageUpload] Error compressing image:", error);
-          // Fallback: create object URL directly from original file
-          // This works for most image types except HEIC on non-Safari browsers
+          console.error("[ChatImageUpload] Compression failed:", error);
+          // Fallback: try using original file directly
           try {
             const previewUrl = URL.createObjectURL(file);
-            console.log('[ChatImageUpload] Using original file for preview:', previewUrl);
+            console.log("[ChatImageUpload] Using original file, calling onImageSelected");
             onImageSelected(file, previewUrl);
           } catch (fallbackError) {
-            console.error("[ChatImageUpload] Fallback also failed:", fallbackError);
+            console.error("[ChatImageUpload] Fallback failed:", fallbackError);
             toast({
               variant: "destructive",
               title: "Image error",
-              description: "Could not process this image. Try a different photo.",
+              description: `Could not process "${file.name}". Try a different photo.`,
             });
           }
         }
         continue;
       }
 
+      // Handle non-image files
       if (!isImage && onFileSelected) {
+        console.log("[ChatImageUpload] Processing document, calling onFileSelected");
         onFileSelected(file, file.name);
         continue;
       }
 
-      // Fallback: if only onImageSelected is provided, skip non-images
+      // Fallback: if only onImageSelected is provided but file is not an image
       if (!isImage && !onFileSelected) {
+        console.log("[ChatImageUpload] Non-image file but no onFileSelected handler");
         toast({
           variant: "destructive",
           title: "Images only",
@@ -185,6 +247,7 @@ export function ChatImageUpload({
 
       // Legacy API: upload immediately (images only)
       if (isImage && onImageUploaded) {
+        console.log("[ChatImageUpload] Using legacy upload API");
         setIsUploading(true);
         try {
           const compressedBlob = await compressImage(file);
@@ -229,7 +292,7 @@ export function ChatImageUpload({
           onImageUploaded(publicUrl);
           setPreview(null);
         } catch (error: any) {
-          console.error("Image upload error:", error);
+          console.error("[ChatImageUpload] Legacy upload error:", error);
           toast({
             variant: "destructive",
             title: "Upload failed",
@@ -249,6 +312,11 @@ export function ChatImageUpload({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  };
+
+  const handleButtonClick = () => {
+    console.log("[ChatImageUpload] Button clicked, triggering file input");
+    fileInputRef.current?.click();
   };
 
   return (
@@ -289,7 +357,7 @@ export function ChatImageUpload({
           variant="ghost"
           size="icon"
           className={`shrink-0 rounded-full text-muted-foreground hover:text-foreground ${buttonSize}`}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleButtonClick}
           disabled={disabled || isUploading}
         >
           {isUploading ? (
