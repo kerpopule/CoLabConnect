@@ -3913,8 +3913,8 @@ export default function Chat() {
                     value={topicEditIcon}
                     onChange={(e) => setTopicEditIcon(e.target.value)}
                     placeholder="💬"
-                    className="mt-1"
-                    maxLength={4}
+                    className="mt-1 text-2xl"
+                    maxLength={20}
                   />
                 </div>
                 <div>
@@ -3983,7 +3983,7 @@ export default function Chat() {
                     onChange={(e) => setNewTopicIcon(e.target.value)}
                     placeholder="💬"
                     className="mt-1 text-2xl text-center"
-                    maxLength={4}
+                    maxLength={20}
                   />
                 </div>
                 <div>
