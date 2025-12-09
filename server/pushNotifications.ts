@@ -492,6 +492,101 @@ export async function notifyGroupRename(
   await Promise.all(sendPromises);
 }
 
+// Send notification when a user joins a group
+export async function notifyGroupMemberJoined(
+  groupId: string,
+  groupName: string,
+  joinedUserId: string,
+  joinedUserName: string
+): Promise<void> {
+  // Get all accepted members of this group (except the user who joined)
+  const { data: members, error } = await supabase
+    .from("group_chat_members")
+    .select("user_id, notifications_enabled")
+    .eq("group_id", groupId)
+    .eq("status", "accepted")
+    .neq("user_id", joinedUserId);
+
+  if (error || !members || members.length === 0) {
+    return;
+  }
+
+  // Filter to only members with notifications enabled
+  const notifiableMembers = members.filter(
+    (member: { user_id: string; notifications_enabled: boolean | null }) =>
+      member.notifications_enabled !== false
+  );
+
+  if (notifiableMembers.length === 0) {
+    return;
+  }
+
+  // Send notifications to all notifiable members
+  const sendPromises = notifiableMembers.map((member: { user_id: string }) =>
+    sendPushNotification(member.user_id, {
+      title: `${joinedUserName} joined ${groupName}`,
+      body: `${joinedUserName} has joined the group chat`,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: `group-join-${groupId}-${joinedUserId}`,
+      requireInteraction: false,
+      data: {
+        type: "group_message",
+        groupId,
+        url: `/chat?group=${groupId}`,
+      },
+    })
+  );
+
+  await Promise.all(sendPromises);
+}
+
+// Send notification when a group invite is declined
+export async function notifyGroupInviteDeclined(
+  receiverId: string,
+  declinedUserName: string,
+  groupName: string
+): Promise<void> {
+  await sendPushNotification(receiverId, {
+    title: "Group Invite Declined",
+    body: `${declinedUserName} declined your invite to ${groupName}`,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `group-invite-declined-${Date.now()}`,
+    requireInteraction: false,
+    data: {
+      type: "group_message",
+      url: `/chat?tab=groups`,
+    },
+  });
+}
+
+// Send notification when admin is transferred
+export async function notifyGroupAdminTransfer(
+  receiverId: string,
+  groupName: string,
+  groupId: string,
+  previousAdminName: string
+): Promise<void> {
+  await sendPushNotification(receiverId, {
+    title: "You're Now Group Admin",
+    body: `${previousAdminName} made you the admin of ${groupName}`,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `group-admin-${groupId}`,
+    requireInteraction: true,
+    data: {
+      type: "group_message",
+      groupId,
+      url: `/chat?group=${groupId}`,
+    },
+    actions: [
+      { action: "view", title: "View Group" },
+      { action: "dismiss", title: "OK" },
+    ],
+  });
+}
+
 // Check and send reminders to users with incomplete profiles who have push notifications enabled
 export async function sendIncompleteProfileReminders(): Promise<{ sent: number; errors: string[] }> {
   const errors: string[] = [];

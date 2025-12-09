@@ -2164,7 +2164,11 @@ export default function Chat() {
 
   // Accept group invite
   const handleAcceptGroupInvite = async (groupId: string) => {
-    if (!user) return;
+    if (!user || !profile) return;
+
+    // Get group info first
+    const group = groupChats?.find((g: any) => g.id === groupId);
+    if (!group) return;
 
     const { error } = await supabase
       .from("group_chat_members")
@@ -2185,7 +2189,30 @@ export default function Chat() {
       return;
     }
 
+    // Add system message that user joined
+    await supabase.from("group_messages").insert({
+      group_id: groupId,
+      user_id: user.id,
+      content: `[SYSTEM] ${profile.name} has joined the group`,
+    });
+
+    // Get group name for notification
+    const groupName = group.name || group.emojis?.join("") || "Group";
+
+    // Send push notification to all group members
+    fetch("/api/notify/group-member-joined", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        groupId,
+        groupName,
+        joinedUserId: user.id,
+        joinedUserName: profile.name,
+      }),
+    }).catch(console.error);
+
     queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
     toast({
       title: "Joined group!",
       description: "You can now chat with this group.",
@@ -2194,7 +2221,15 @@ export default function Chat() {
 
   // Decline group invite
   const handleDeclineGroupInvite = async (groupId: string) => {
-    if (!user) return;
+    if (!user || !profile) return;
+
+    // Get the membership info to find out who invited this user
+    const { data: membership } = await supabase
+      .from("group_chat_members")
+      .select("invited_by, group:group_chats(name, emojis)")
+      .eq("group_id", groupId)
+      .eq("user_id", user.id)
+      .single();
 
     const { error } = await supabase
       .from("group_chat_members")
@@ -2210,6 +2245,22 @@ export default function Chat() {
         description: "Please try again.",
       });
       return;
+    }
+
+    // Send notification to the inviter that the invite was declined
+    if (membership?.invited_by) {
+      const groupData = membership.group as any;
+      const groupName = groupData?.name || groupData?.emojis?.join("") || "Group";
+      fetch("/api/notify/group-invite-declined", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          receiverId: membership.invited_by,
+          declinedUserId: user.id,
+          declinedUserName: profile.name,
+          groupName,
+        }),
+      }).catch(console.error);
     }
 
     queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
@@ -2347,6 +2398,13 @@ export default function Chat() {
     }
 
     // Otherwise, just leave the group (keep it for other members)
+    // Add system message that user left BEFORE deleting membership
+    await supabase.from("group_messages").insert({
+      group_id: activeGroup,
+      user_id: user.id,
+      content: `[SYSTEM] ${profile?.name || "Someone"} has left the group`,
+    });
+
     const { error } = await supabase
       .from("group_chat_members")
       .delete()
@@ -2391,17 +2449,26 @@ export default function Chat() {
       return;
     }
 
-    // Notify new admin
+    // Get new admin profile name
     const newAdmin = activeGroupData.members?.find((m: any) => m.user_id === newAdminId);
-    fetch("/api/notify/group-invite", {
+    const newAdminName = newAdmin?.profiles?.name || "a new member";
+
+    // Add system message about admin change and user leaving
+    await supabase.from("group_messages").insert({
+      group_id: activeGroup,
+      user_id: user.id,
+      content: `[SYSTEM] ${profile?.name || "Someone"} has left the group. ${newAdminName} is now the group admin.`,
+    });
+
+    // Notify new admin
+    fetch("/api/notify/group-admin-transfer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         receiverId: newAdminId,
-        senderId: user.id,
-        senderName: "System",
-        groupName: `You are now admin of ${activeGroupData?.name || activeGroupData?.emojis?.join("")}`,
+        groupName: activeGroupData?.name || activeGroupData?.emojis?.join(""),
         groupId: activeGroup,
+        previousAdminName: profile?.name,
       }),
     }).catch(console.error);
 
@@ -2949,9 +3016,12 @@ export default function Chat() {
   );
 
   // Calculate total unread counts for tab badges
+  const pendingGroupInvites = (groupChats || [])
+    .filter((g: any) => g.membership_status === "pending").length;
+
   const totalGroupUnread = (groupChats || [])
     .filter((g: any) => g.membership_status === "accepted")
-    .reduce((sum: number, g: any) => sum + (g.unread_count || 0), 0);
+    .reduce((sum: number, g: any) => sum + (g.unread_count || 0), 0) + pendingGroupInvites;
 
   const totalDmUnread = (dmsWithHistory?.active || [])
     .reduce((sum: number, dm: any) => sum + (dm.unreadCount || 0), 0);

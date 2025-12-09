@@ -538,8 +538,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </nav>
 
       {/* Main content area - offset by sidebar width, then center content within remaining space */}
-      <div className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'}`}>
-        <main className={`p-4 md:p-8 max-w-5xl mx-auto w-full animate-in fade-in duration-500 ${isChatPage ? "overflow-hidden flex flex-col h-full" : ""}`}>
+      <div className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'}`}>
+        <main className={`p-4 md:p-8 max-w-5xl mx-auto w-full animate-in fade-in duration-500 ${isChatPage ? "overflow-hidden flex flex-col flex-1 min-h-0" : ""}`}>
           {children}
         </main>
       </div>

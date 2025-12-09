@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { log } from "./index";
-import { notifyNewDM, notifyConnectionRequest, notifyFollowedChat, notifyGroupInvite, notifyGroupMessage, notifyTopicKick, notifyTopicInviteBack, notifyGroupRename } from "./pushNotifications";
+import { notifyNewDM, notifyConnectionRequest, notifyFollowedChat, notifyGroupInvite, notifyGroupMessage, notifyTopicKick, notifyTopicInviteBack, notifyGroupRename, notifyGroupMemberJoined, notifyGroupInviteDeclined, notifyGroupAdminTransfer } from "./pushNotifications";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
@@ -1025,6 +1025,57 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       log(`Group rename notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification when a user joins a group (accepts invite)
+  app.post("/api/notify/group-member-joined", async (req, res) => {
+    try {
+      const { groupId, groupName, joinedUserId, joinedUserName } = req.body;
+
+      if (!groupId || !groupName || !joinedUserId || !joinedUserName) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyGroupMemberJoined(groupId, groupName, joinedUserId, joinedUserName);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Group member joined notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification when a user declines a group invite
+  app.post("/api/notify/group-invite-declined", async (req, res) => {
+    try {
+      const { receiverId, declinedUserId, declinedUserName, groupName } = req.body;
+
+      if (!receiverId || !declinedUserName || !groupName) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyGroupInviteDeclined(receiverId, declinedUserName, groupName);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Group invite declined notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification when admin transfers to a new user
+  app.post("/api/notify/group-admin-transfer", async (req, res) => {
+    try {
+      const { receiverId, groupName, groupId, previousAdminName } = req.body;
+
+      if (!receiverId || !groupName || !groupId || !previousAdminName) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyGroupAdminTransfer(receiverId, groupName, groupId, previousAdminName);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Group admin transfer notification error: ${error.message}`);
       res.status(500).json({ error: "Internal server error" });
     }
   });
