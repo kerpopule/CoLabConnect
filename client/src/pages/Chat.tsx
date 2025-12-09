@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, UserMinus, X, FileText, Shield, Pencil, GripVertical } from "lucide-react";
+import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, UserMinus, X, FileText, Shield, Pencil, GripVertical, Upload } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Topic, Message, Profile, PrivateMessage, getPrivateChatId, GroupChat, GroupMessage, GroupChatMember } from "@/lib/supabase";
@@ -14,7 +14,7 @@ import { NotificationEnableButton, NotificationPrompt, useDmNotificationPrompt }
 import { MessageWrapper, DeletedMessage, EditedIndicator, MessageActions } from "@/components/MessageContextMenu";
 import { MessageContent } from "@/components/LinkPreview";
 import { EmojiReactions, AddReactionButton } from "@/components/EmojiReactions";
-import { ChatImageUpload, ChatImage, ChatFile, isImageUrl, isFileUrl } from "@/components/ChatImageUpload";
+import { ChatImageUpload, ChatImage, ChatFile, isImageUrl, isFileUrl, compressImage } from "@/components/ChatImageUpload";
 import { useToast } from "@/hooks/use-toast";
 import ChatTileGrid from "@/components/ChatTileGrid";
 import GroupCreateModal from "@/components/GroupCreateModal";
@@ -134,6 +134,8 @@ export default function Chat() {
   const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([]);
   const [pendingFiles, setPendingFiles] = useState<{ file: File; fileName: string }[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const dragCounter = useRef(0);
 
   const { user, profile: currentUserProfile, loading: authLoading } = useAuth();
   const isGeneralTopicAdmin = user?.email?.toLowerCase() === GENERAL_TOPICS_ADMIN_EMAIL.toLowerCase();
@@ -759,6 +761,78 @@ export default function Chat() {
   const clearPendingFiles = () => {
     setPendingFiles([]);
   };
+
+  // Drag and drop handlers for file upload
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDraggingOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDraggingOver(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    dragCounter.current = 0;
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    // Process each dropped file
+    for (const file of files) {
+      const isImage = file.type.startsWith("image/") ||
+        ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff'].includes(
+          file.name.toLowerCase().split('.').pop() || ''
+        );
+
+      if (isImage) {
+        // Compress and add as pending image
+        try {
+          const compressedBlob = await compressImage(file);
+          const compressedFile = new File(
+            [compressedBlob],
+            file.name.replace(/\.[^.]+$/, '.jpg'),
+            { type: 'image/jpeg' }
+          );
+          const previewUrl = URL.createObjectURL(compressedBlob);
+          addPendingImage(compressedFile, previewUrl);
+        } catch (error) {
+          console.error("[Chat] Failed to compress dropped image:", error);
+          // Fallback: use original file
+          const previewUrl = URL.createObjectURL(file);
+          addPendingImage(file, previewUrl);
+        }
+      } else {
+        // Non-image file - check size limit (3MB)
+        const MAX_FILE_SIZE = 3 * 1024 * 1024;
+        if (file.size > MAX_FILE_SIZE) {
+          toast({
+            title: "File too large",
+            description: `"${file.name}" is too large. Maximum file size is 3MB for non-image files.`,
+          });
+          continue;
+        }
+        addPendingFile(file, file.name);
+      }
+    }
+  }, [addPendingImage, addPendingFile, toast]);
 
   // Mark messages as read when opening a private chat
   const markMessagesAsRead = useCallback(async (senderId: string) => {
@@ -3111,7 +3185,21 @@ export default function Chat() {
 
         {/* Chat View */}
         {(viewMode === "chat" || activeTab === "ai") && (
-          <>
+          <div
+            className="flex flex-col flex-1 min-h-0 relative"
+            onDragEnter={!isAiChat ? handleDragEnter : undefined}
+            onDragLeave={!isAiChat ? handleDragLeave : undefined}
+            onDragOver={!isAiChat ? handleDragOver : undefined}
+            onDrop={!isAiChat ? handleDrop : undefined}
+          >
+            {/* Drag overlay */}
+            {isDraggingOver && !isAiChat && (
+              <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-sm border-2 border-dashed border-primary rounded-xl flex flex-col items-center justify-center pointer-events-none">
+                <Upload className="h-12 w-12 text-primary mb-2" />
+                <p className="text-lg font-medium text-primary">Drop files to attach</p>
+                <p className="text-sm text-muted-foreground">Images and documents supported</p>
+              </div>
+            )}
             <div
               ref={scrollViewportRef}
               className="flex-1 p-4 min-h-0 overflow-y-auto scroll-smooth"
@@ -3538,7 +3626,7 @@ export default function Chat() {
               </form>
               )}
             </div>
-          </>
+          </div>
         )}
       </div>
 
