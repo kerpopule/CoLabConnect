@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { Users, MessageCircle, Moon, Sun, LogOut, UserCog, UserCheck, User } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { QRCodeButton } from "./QRCodeButton";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
@@ -18,6 +18,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { saveLastRoute } from "@/pages/Home";
 
+// Detect if device is tablet (touch device with larger screen)
+const isTablet = () => {
+  if (typeof window === 'undefined') return false;
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const isLargeScreen = window.innerWidth >= 768;
+  return hasTouch && isLargeScreen;
+};
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   // Initialize from localStorage, then DOM state, then default to false
@@ -27,6 +35,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return document.documentElement.classList.contains("dark");
   });
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const sidebarRef = useRef<HTMLElement>(null);
   const { user, profile, signOut, loading } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -346,6 +356,59 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   }, [location, user]);
 
+  // Sidebar collapse/expand behavior for desktop and tablet
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+
+    // Only apply to desktop/tablet (md and up)
+    const mediaQuery = window.matchMedia('(min-width: 768px)');
+    if (!mediaQuery.matches) return;
+
+    const tablet = isTablet();
+
+    if (tablet) {
+      // Tablet: click anywhere on sidebar (not on buttons) to expand
+      // Click outside to collapse
+      const handleSidebarClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        // Check if click is on a link or button
+        const isInteractive = target.closest('a, button, [role="button"]');
+        if (!isInteractive && sidebarCollapsed) {
+          e.preventDefault();
+          e.stopPropagation();
+          setSidebarCollapsed(false);
+        }
+      };
+
+      const handleOutsideClick = (e: MouseEvent) => {
+        if (!sidebar.contains(e.target as Node)) {
+          setSidebarCollapsed(true);
+        }
+      };
+
+      sidebar.addEventListener('click', handleSidebarClick);
+      document.addEventListener('click', handleOutsideClick);
+
+      return () => {
+        sidebar.removeEventListener('click', handleSidebarClick);
+        document.removeEventListener('click', handleOutsideClick);
+      };
+    } else {
+      // Desktop: hover to expand, leave to collapse
+      const handleMouseEnter = () => setSidebarCollapsed(false);
+      const handleMouseLeave = () => setSidebarCollapsed(true);
+
+      sidebar.addEventListener('mouseenter', handleMouseEnter);
+      sidebar.addEventListener('mouseleave', handleMouseLeave);
+
+      return () => {
+        sidebar.removeEventListener('mouseenter', handleMouseEnter);
+        sidebar.removeEventListener('mouseleave', handleMouseLeave);
+      };
+    }
+  }, [sidebarCollapsed]);
+
   return (
     <div className={`bg-background flex flex-col ${isKeyboardOpen ? 'pb-0' : 'pb-24'} md:pb-0 font-sans ${isChatPage ? "h-dvh overflow-hidden fixed inset-0 md:relative md:h-screen" : "min-h-screen"}`}>
       {/* Mobile Top Bar - only show on profile page */}
@@ -363,29 +426,36 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Desktop Sidebar / Mobile Bottom Nav */}
-      <nav className={`mobile-nav fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-lg border-t border-border md:top-0 md:bottom-auto md:w-64 md:h-screen md:border-r md:border-t-0 md:flex md:flex-col md:p-6 transition-transform duration-200 ${isKeyboardOpen ? 'translate-y-full md:translate-y-0' : ''}`}>
+      <nav
+        ref={sidebarRef}
+        className={`mobile-nav fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-lg border-t border-border md:top-0 md:bottom-auto md:h-screen md:border-r md:border-t-0 md:flex md:flex-col md:p-4 transition-all duration-300 ease-in-out ${isKeyboardOpen ? 'translate-y-full md:translate-y-0' : ''} ${sidebarCollapsed ? 'md:w-20' : 'md:w-64 md:p-6'}`}
+      >
         <div className="hidden md:block mb-8">
-          <div className="flex items-center justify-between mb-4">
+          <div className={`flex items-center mb-4 ${sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
             <h1 className="text-2xl font-display font-bold text-primary">Co:Lab</h1>
-            <Button variant="ghost" size="icon" onClick={toggleTheme}>
-              {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
+            {!sidebarCollapsed && (
+              <Button variant="ghost" size="icon" onClick={toggleTheme}>
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </Button>
+            )}
           </div>
           {/* User info */}
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-3 w-full p-2 rounded-xl hover:bg-muted transition-colors text-left">
-                  <Avatar className="h-10 w-10">
+                <button className={`flex items-center w-full p-2 rounded-xl hover:bg-muted transition-colors text-left ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                  <Avatar className="h-10 w-10 flex-shrink-0">
                     <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.name || 'User'} />
                     <AvatarFallback className="bg-primary/10 text-primary font-medium">
                       {profile ? getInitials(profile.name) : user.email?.[0].toUpperCase() || 'U'}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{profile?.name || user.email}</p>
-                    <p className="text-xs text-muted-foreground truncate">{profile?.role || 'Member'}</p>
-                  </div>
+                  {!sidebarCollapsed && (
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{profile?.name || user.email}</p>
+                      <p className="text-xs text-muted-foreground truncate">{profile?.role || 'Member'}</p>
+                    </div>
+                  )}
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
@@ -402,8 +472,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </DropdownMenu>
           ) : !loading ? (
             <Link href="/login">
-              <Button variant="outline" className="w-full hover:bg-primary/10 hover:border-primary hover:scale-[1.02] hover:shadow-md transition-all">
-                Sign In
+              <Button variant="outline" className={`hover:bg-primary/10 hover:border-primary hover:scale-[1.02] hover:shadow-md transition-all ${sidebarCollapsed ? 'w-12 h-12 p-0' : 'w-full'}`}>
+                {sidebarCollapsed ? <User className="h-5 w-5" /> : 'Sign In'}
               </Button>
             </Link>
           ) : null}
@@ -444,16 +514,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
             return (
               <li key={item.href}>
                 <Link href={item.href}>
-                  <div className={`relative flex flex-row items-center justify-start px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer ${isActive ? "text-primary font-medium bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}>
-                    <div className="relative">
-                      <item.icon className={`h-6 w-6 mr-3 ${isActive ? "stroke-[2.5px]" : "stroke-2"}`} />
+                  <div className={`relative flex flex-row items-center px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${isActive ? "text-primary font-medium bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}>
+                    <div className="relative flex-shrink-0">
+                      <item.icon className={`h-6 w-6 ${sidebarCollapsed ? '' : 'mr-3'} ${isActive ? "stroke-[2.5px]" : "stroke-2"}`} />
                       {item.badge > 0 && (
                         <span className="absolute -top-1 -right-0 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1">
                           {item.badge > 9 ? "9+" : item.badge}
                         </span>
                       )}
                     </div>
-                    <span className="text-sm">{item.label}</span>
+                    {!sidebarCollapsed && <span className="text-sm">{item.label}</span>}
                   </div>
                 </Link>
               </li>
@@ -463,11 +533,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Desktop QR Code Button */}
         <div className="hidden md:block mt-auto">
-          <QRCodeButton mode="desktop" />
+          <QRCodeButton mode={sidebarCollapsed ? "collapsed" : "desktop"} />
         </div>
       </nav>
 
-      <main className={`flex-1 md:pl-64 p-4 md:p-8 max-w-5xl mx-auto w-full animate-in fade-in duration-500 ${isChatPage ? "overflow-hidden flex flex-col" : ""}`}>
+      <main className={`flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full animate-in fade-in duration-500 transition-all duration-300 ${sidebarCollapsed ? 'md:pl-20' : 'md:pl-64'} ${isChatPage ? "overflow-hidden flex flex-col" : ""}`}>
         {children}
       </main>
 

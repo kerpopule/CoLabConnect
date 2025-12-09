@@ -13,7 +13,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-export function QRCodeButton({ mode = "mobile" }: { mode?: "mobile" | "desktop" }) {
+export function QRCodeButton({ mode = "mobile" }: { mode?: "mobile" | "desktop" | "collapsed" }) {
   const [isOpen, setIsOpen] = useState(false);
   const { user, profile } = useAuth();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -77,15 +77,19 @@ export function QRCodeButton({ mode = "mobile" }: { mode?: "mobile" | "desktop" 
   };
 
   // Desktop mode uses standard dialog
-  if (mode === "desktop") {
+  if (mode === "desktop" || mode === "collapsed") {
     return (
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
           <Button
-            className="w-full h-12 rounded-xl flex items-center justify-start px-4 rounded-full shadow-lg bg-gradient-to-tr from-primary to-accent hover:shadow-xl hover:scale-105 transition-all duration-300"
+            className={`h-12 rounded-xl flex items-center shadow-lg bg-gradient-to-tr from-primary to-accent hover:shadow-xl hover:scale-105 transition-all duration-300 ${
+              mode === "collapsed"
+                ? "w-12 justify-center px-0 rounded-full"
+                : "w-full justify-start px-4 rounded-full"
+            }`}
           >
-            <QrCode className="text-white mr-2 h-5 w-5" />
-            <span className="text-white font-medium">My QR Code</span>
+            <QrCode className={`text-white h-5 w-5 ${mode === "collapsed" ? "" : "mr-2"}`} />
+            {mode !== "collapsed" && <span className="text-white font-medium">My QR Code</span>}
           </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-md">
