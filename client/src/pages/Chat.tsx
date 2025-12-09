@@ -494,26 +494,40 @@ export default function Chat() {
 
   // Handle topic reorder changes
   const handleTopicReorder = (reorderedItems: { id: string; displayOrder: number }[]) => {
+    console.log('[Topic Reorder] handleTopicReorder called with', reorderedItems);
     setPendingTopicOrder(reorderedItems);
   };
 
   // Save topic order (admin only)
   const saveTopicOrder = async () => {
+    console.log('[Topic Reorder] saveTopicOrder called', {
+      isGeneralTopicAdmin,
+      pendingTopicOrderLength: pendingTopicOrder.length,
+      pendingTopicOrder
+    });
+
     if (!isGeneralTopicAdmin || pendingTopicOrder.length === 0) {
+      console.log('[Topic Reorder] Early exit - no changes to save');
       setIsReorderingTopics(false);
       return;
     }
 
     // Update each topic's display_order
     for (const item of pendingTopicOrder) {
-      await supabase
+      console.log('[Topic Reorder] Updating topic', item.id, 'to order', item.displayOrder);
+      const { error } = await supabase
         .from("topics")
         .update({ display_order: item.displayOrder })
         .eq("id", item.id);
+      if (error) {
+        console.error('[Topic Reorder] Error updating topic:', error);
+      }
     }
 
     // Force refetch since topics query has staleTime: Infinity
+    console.log('[Topic Reorder] Refetching topics...');
     await queryClient.refetchQueries({ queryKey: ["topics"] });
+    console.log('[Topic Reorder] Refetch complete');
     toast({
       title: "Topic order saved",
       description: "All users will now see topics in this order.",
