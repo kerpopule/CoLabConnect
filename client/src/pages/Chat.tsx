@@ -56,18 +56,29 @@ export default function Chat() {
   const groupIdFromUrl = searchParams.get("group");
   const tabFromUrl = searchParams.get("tab") as ActiveTab | null;
 
-  // Navigation state
+  // Get cached chat state from sessionStorage (persists during session, clears on app close)
+  const getCachedChatState = () => {
+    try {
+      const cached = sessionStorage.getItem("colab-chat-state");
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  };
+  const cachedState = getCachedChatState();
+
+  // Navigation state - URL params take priority, then cached state, then defaults
   const [activeTab, setActiveTab] = useState<ActiveTab>(
-    dmUserId ? "dms" : groupIdFromUrl ? "groups" : tabFromUrl || "general"
+    dmUserId ? "dms" : groupIdFromUrl ? "groups" : tabFromUrl || cachedState?.activeTab || "general"
   );
   const [viewMode, setViewMode] = useState<ViewMode>(
-    dmUserId || groupIdFromUrl ? "chat" : "list"
+    dmUserId || groupIdFromUrl ? "chat" : cachedState?.viewMode || "list"
   );
 
-  // Chat state
-  const [activeTopic, setActiveTopic] = useState<string | null>(null);
-  const [activeDm, setActiveDm] = useState<string | null>(dmUserId);
-  const [activeGroup, setActiveGroup] = useState<string | null>(groupIdFromUrl);
+  // Chat state - URL params take priority, then cached state
+  const [activeTopic, setActiveTopic] = useState<string | null>(cachedState?.activeTopic || null);
+  const [activeDm, setActiveDm] = useState<string | null>(dmUserId || cachedState?.activeDm || null);
+  const [activeGroup, setActiveGroup] = useState<string | null>(groupIdFromUrl || cachedState?.activeGroup || null);
   const [input, setInput] = useState("");
 
   // AI state
@@ -112,6 +123,18 @@ export default function Chat() {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  // Save chat state to sessionStorage whenever it changes
+  useEffect(() => {
+    const state = {
+      activeTab,
+      viewMode,
+      activeTopic,
+      activeDm,
+      activeGroup,
+    };
+    sessionStorage.setItem("colab-chat-state", JSON.stringify(state));
+  }, [activeTab, viewMode, activeTopic, activeDm, activeGroup]);
 
   // Fetch muted users for the current user
   const { data: mutedUserIds = [] } = useQuery({
