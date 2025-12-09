@@ -45,6 +45,7 @@ export type Topic = {
   icon: string | null;
   description: string | null;
   created_at: string;
+  display_order?: number;
 };
 
 export type Message = {
@@ -107,6 +108,7 @@ export type GroupChatMember = {
   role: 'admin' | 'member';
   joined_at: string;
   last_read_at: string | null;
+  display_order?: number;
   // Joined profile data
   profiles?: Profile;
 };

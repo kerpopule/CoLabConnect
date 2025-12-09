@@ -1,5 +1,5 @@
-import { Plus } from "lucide-react";
-import { useRef, useCallback } from "react";
+import { Plus, GripVertical } from "lucide-react";
+import { useRef, useCallback, useState } from "react";
 
 interface TileItem {
   id: string;
@@ -11,6 +11,7 @@ interface TileItem {
   isCreate?: boolean;
   isAdmin?: boolean;
   isWide?: boolean; // Spans 2 columns on mobile
+  displayOrder?: number;
 }
 
 interface ChatTileGridProps {
@@ -21,6 +22,11 @@ interface ChatTileGridProps {
   onLongPress?: (id: string) => void;
   showCreate?: boolean;
   onCreateClick?: () => void;
+  // Reordering support
+  isReordering?: boolean;
+  onReorder?: (reorderedItems: { id: string; displayOrder: number }[]) => void;
+  onReorderCancel?: () => void;
+  onReorderSave?: () => void;
 }
 
 export default function ChatTileGrid({
@@ -31,33 +37,195 @@ export default function ChatTileGrid({
   onLongPress,
   showCreate,
   onCreateClick,
+  isReordering,
+  onReorder,
+  onReorderCancel,
+  onReorderSave,
 }: ChatTileGridProps) {
+  const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+  const [localItems, setLocalItems] = useState<TileItem[]>(items);
+
+  // Update local items when props change (but not during reordering)
+  const itemsRef = useRef(items);
+  if (!isReordering && items !== itemsRef.current) {
+    itemsRef.current = items;
+    setLocalItems(items);
+  }
+
+  const handleDragStart = useCallback((e: React.DragEvent, itemId: string) => {
+    setDraggedItem(itemId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", itemId);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, itemId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (draggedItem && draggedItem !== itemId) {
+      setDragOverItem(itemId);
+    }
+  }, [draggedItem]);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverItem(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDragOverItem(null);
+
+    if (!draggedItem || draggedItem === targetId) {
+      setDraggedItem(null);
+      return;
+    }
+
+    const newItems = [...localItems];
+    const draggedIndex = newItems.findIndex(item => item.id === draggedItem);
+    const targetIndex = newItems.findIndex(item => item.id === targetId);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      const [removed] = newItems.splice(draggedIndex, 1);
+      newItems.splice(targetIndex, 0, removed);
+
+      // Update display order
+      const reorderedItems = newItems.map((item, index) => ({
+        id: item.id,
+        displayOrder: index,
+      }));
+
+      setLocalItems(newItems);
+      onReorder?.(reorderedItems);
+    }
+
+    setDraggedItem(null);
+  }, [draggedItem, localItems, onReorder]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedItem(null);
+    setDragOverItem(null);
+  }, []);
+
+  // Touch-based reordering for mobile
+  const touchStartPos = useRef<{ x: number; y: number; itemId: string } | null>(null);
+  const touchMoveItem = useRef<string | null>(null);
+
+  const handleTouchStartReorder = useCallback((e: React.TouchEvent, itemId: string) => {
+    const touch = e.touches[0];
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY, itemId };
+    touchMoveItem.current = itemId;
+    setDraggedItem(itemId);
+  }, []);
+
+  const handleTouchMoveReorder = useCallback((e: React.TouchEvent) => {
+    if (!touchMoveItem.current) return;
+
+    const touch = e.touches[0];
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    const tileElement = element?.closest('[data-tile-id]');
+
+    if (tileElement) {
+      const targetId = tileElement.getAttribute('data-tile-id');
+      if (targetId && targetId !== touchMoveItem.current) {
+        setDragOverItem(targetId);
+      }
+    }
+  }, []);
+
+  const handleTouchEndReorder = useCallback((e: React.TouchEvent) => {
+    if (!touchMoveItem.current || !dragOverItem) {
+      setDraggedItem(null);
+      setDragOverItem(null);
+      touchMoveItem.current = null;
+      touchStartPos.current = null;
+      return;
+    }
+
+    const newItems = [...localItems];
+    const draggedIndex = newItems.findIndex(item => item.id === touchMoveItem.current);
+    const targetIndex = newItems.findIndex(item => item.id === dragOverItem);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      const [removed] = newItems.splice(draggedIndex, 1);
+      newItems.splice(targetIndex, 0, removed);
+
+      const reorderedItems = newItems.map((item, index) => ({
+        id: item.id,
+        displayOrder: index,
+      }));
+
+      setLocalItems(newItems);
+      onReorder?.(reorderedItems);
+    }
+
+    setDraggedItem(null);
+    setDragOverItem(null);
+    touchMoveItem.current = null;
+    touchStartPos.current = null;
+  }, [dragOverItem, localItems, onReorder]);
+
+  const displayItems = isReordering ? localItems : items;
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-4">
-      {/* Create New Tile */}
-      {showCreate && (
-        <button
-          onClick={onCreateClick}
-          className="aspect-square rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 flex flex-col items-center justify-center gap-2 hover:border-primary/50 hover:bg-primary/10 hover:scale-105 transition-all cursor-pointer group"
-        >
-          <Plus className="h-8 w-8 text-primary/60 group-hover:text-primary transition-colors" />
-          <span className="text-sm font-medium text-primary/60 group-hover:text-primary transition-colors">
-            Create
-          </span>
-        </button>
+    <div className="relative">
+      {/* Reorder Controls */}
+      {isReordering && (
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b p-3 flex items-center justify-between">
+          <span className="text-sm font-medium">Drag tiles to reorder</span>
+          <div className="flex gap-2">
+            <button
+              onClick={onReorderCancel}
+              className="px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onReorderSave}
+              className="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              Save Order
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Tile Items */}
-      {items.map((item) => (
-        <TileButton
-          key={item.id}
-          item={item}
-          onSelect={onSelect}
-          onAccept={onAccept}
-          onDecline={onDecline}
-          onLongPress={onLongPress}
-        />
-      ))}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-4">
+        {/* Create New Tile */}
+        {showCreate && !isReordering && (
+          <button
+            onClick={onCreateClick}
+            className="aspect-square rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 flex flex-col items-center justify-center gap-2 hover:border-primary/50 hover:bg-primary/10 hover:scale-105 transition-all cursor-pointer group"
+          >
+            <Plus className="h-8 w-8 text-primary/60 group-hover:text-primary transition-colors" />
+            <span className="text-sm font-medium text-primary/60 group-hover:text-primary transition-colors">
+              Create
+            </span>
+          </button>
+        )}
+
+        {/* Tile Items */}
+        {displayItems.map((item) => (
+          <TileButton
+            key={item.id}
+            item={item}
+            onSelect={onSelect}
+            onAccept={onAccept}
+            onDecline={onDecline}
+            onLongPress={onLongPress}
+            isReordering={isReordering}
+            isDragging={draggedItem === item.id}
+            isDragOver={dragOverItem === item.id}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
+            onTouchStartReorder={handleTouchStartReorder}
+            onTouchMoveReorder={handleTouchMoveReorder}
+            onTouchEndReorder={handleTouchEndReorder}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -68,9 +236,38 @@ interface TileButtonProps {
   onAccept?: (id: string) => void;
   onDecline?: (id: string) => void;
   onLongPress?: (id: string) => void;
+  // Reordering props
+  isReordering?: boolean;
+  isDragging?: boolean;
+  isDragOver?: boolean;
+  onDragStart?: (e: React.DragEvent, itemId: string) => void;
+  onDragOver?: (e: React.DragEvent, itemId: string) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent, itemId: string) => void;
+  onDragEnd?: () => void;
+  onTouchStartReorder?: (e: React.TouchEvent, itemId: string) => void;
+  onTouchMoveReorder?: (e: React.TouchEvent) => void;
+  onTouchEndReorder?: (e: React.TouchEvent) => void;
 }
 
-function TileButton({ item, onSelect, onAccept, onDecline, onLongPress }: TileButtonProps) {
+function TileButton({
+  item,
+  onSelect,
+  onAccept,
+  onDecline,
+  onLongPress,
+  isReordering,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  onTouchStartReorder,
+  onTouchMoveReorder,
+  onTouchEndReorder,
+}: TileButtonProps) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
 
@@ -154,8 +351,54 @@ function TileButton({ item, onSelect, onAccept, onDecline, onLongPress }: TileBu
   // Wide tile spans 2 columns on mobile
   const wideClass = item.isWide ? "col-span-2 sm:col-span-1" : "";
 
+  // Reordering mode: draggable tiles with visual feedback
+  if (isReordering) {
+    return (
+      <div
+        className={`relative ${wideClass}`}
+        data-tile-id={item.id}
+        draggable
+        onDragStart={(e) => onDragStart?.(e, item.id)}
+        onDragOver={(e) => onDragOver?.(e, item.id)}
+        onDragLeave={onDragLeave}
+        onDrop={(e) => onDrop?.(e, item.id)}
+        onDragEnd={onDragEnd}
+        onTouchStart={(e) => onTouchStartReorder?.(e, item.id)}
+        onTouchMove={onTouchMoveReorder}
+        onTouchEnd={onTouchEndReorder}
+      >
+        <div
+          className={`w-full rounded-xl border-2 bg-card flex flex-col items-center justify-center gap-1 p-2 relative select-none aspect-square transition-all ${
+            isDragging
+              ? "opacity-50 border-primary scale-95"
+              : isDragOver
+              ? "border-primary bg-primary/10 scale-105"
+              : "border-dashed border-primary/50 cursor-grab active:cursor-grabbing"
+          }`}
+        >
+          {/* Drag Handle */}
+          <div className="absolute top-1 right-1">
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </div>
+          {/* Emoji Display */}
+          <div className="text-3xl sm:text-4xl">
+            {Array.isArray(item.emoji)
+              ? item.emoji.join("")
+              : item.emoji || "💬"}
+          </div>
+          {/* Title/Name */}
+          {item.name && (
+            <span className="font-medium text-center px-1 line-clamp-1 text-sm">
+              {item.name}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`relative ${wideClass}`}>
+    <div className={`relative ${wideClass}`} data-tile-id={item.id}>
       <button
         onClick={handleClick}
         onTouchStart={handleTouchStart}

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { log } from "./index";
-import { notifyNewDM, notifyConnectionRequest, notifyFollowedChat, notifyGroupInvite, notifyGroupMessage } from "./pushNotifications";
+import { notifyNewDM, notifyConnectionRequest, notifyFollowedChat, notifyGroupInvite, notifyGroupMessage, notifyTopicKick, notifyTopicInviteBack, notifyGroupRename } from "./pushNotifications";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
@@ -715,6 +715,57 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       log(`Group message notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification when user is kicked from a topic
+  app.post("/api/notify/topic-kick", async (req, res) => {
+    try {
+      const { receiverId, adminName, topicName } = req.body;
+
+      if (!receiverId || !adminName || !topicName) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyTopicKick(receiverId, adminName, topicName);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Topic kick notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification when user is invited back to a topic
+  app.post("/api/notify/topic-invite-back", async (req, res) => {
+    try {
+      const { receiverId, adminName, topicName, topicId } = req.body;
+
+      if (!receiverId || !adminName || !topicName || !topicId) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyTopicInviteBack(receiverId, adminName, topicName, topicId);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Topic invite back notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification when a group is renamed
+  app.post("/api/notify/group-rename", async (req, res) => {
+    try {
+      const { groupId, oldName, newName, adminId, adminName } = req.body;
+
+      if (!groupId || !newName || !adminId || !adminName) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyGroupRename(groupId, oldName || "", newName, adminId, adminName);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Group rename notification error: ${error.message}`);
       res.status(500).json({ error: "Internal server error" });
     }
   });

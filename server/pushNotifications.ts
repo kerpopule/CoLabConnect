@@ -400,6 +400,98 @@ export async function notifyIncompleteProfile(userId: string): Promise<void> {
   });
 }
 
+// Send notification when a user is kicked from a topic
+export async function notifyTopicKick(
+  receiverId: string,
+  adminName: string,
+  topicName: string
+): Promise<void> {
+  await sendPushNotification(receiverId, {
+    title: "Removed from Topic",
+    body: `You have been removed from #${topicName} by ${adminName}`,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `topic-kick-${Date.now()}`,
+    requireInteraction: true,
+    data: {
+      type: "chat",
+      url: `/chat?tab=general`,
+    },
+  });
+}
+
+// Send notification when a user is invited back to a topic
+export async function notifyTopicInviteBack(
+  receiverId: string,
+  adminName: string,
+  topicName: string,
+  topicId: string
+): Promise<void> {
+  await sendPushNotification(receiverId, {
+    title: "Invited Back to Topic",
+    body: `${adminName} has invited you back to #${topicName}`,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `topic-invite-${topicId}`,
+    requireInteraction: false,
+    data: {
+      type: "chat",
+      topicId,
+      url: `/chat?tab=general`,
+    },
+  });
+}
+
+// Send notification when a group is renamed
+export async function notifyGroupRename(
+  groupId: string,
+  oldName: string,
+  newName: string,
+  adminId: string,
+  adminName: string
+): Promise<void> {
+  // Get all accepted members of this group (except the admin who renamed it)
+  const { data: members, error } = await supabase
+    .from("group_chat_members")
+    .select("user_id, notifications_enabled")
+    .eq("group_id", groupId)
+    .eq("status", "accepted")
+    .neq("user_id", adminId);
+
+  if (error || !members || members.length === 0) {
+    return;
+  }
+
+  // Filter to only members with notifications enabled
+  const notifiableMembers = members.filter(
+    (member: { user_id: string; notifications_enabled: boolean | null }) =>
+      member.notifications_enabled !== false
+  );
+
+  if (notifiableMembers.length === 0) {
+    return;
+  }
+
+  // Send notifications to all notifiable members
+  const sendPromises = notifiableMembers.map((member: { user_id: string }) =>
+    sendPushNotification(member.user_id, {
+      title: "Group Renamed",
+      body: `${adminName} renamed the group to "${newName}"`,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: `group-rename-${groupId}`,
+      requireInteraction: false,
+      data: {
+        type: "group_message",
+        groupId,
+        url: `/chat?tab=groups`,
+      },
+    })
+  );
+
+  await Promise.all(sendPromises);
+}
+
 // Check and send reminders to users with incomplete profiles who have push notifications enabled
 export async function sendIncompleteProfileReminders(): Promise<{ sent: number; errors: string[] }> {
   const errors: string[] = [];

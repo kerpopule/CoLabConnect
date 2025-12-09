@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, UserMinus, X, FileText, Shield } from "lucide-react";
+import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, UserMinus, X, FileText, Shield, Pencil, GripVertical } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Topic, Message, Profile, PrivateMessage, getPrivateChatId, GroupChat, GroupMessage, GroupChatMember } from "@/lib/supabase";
@@ -30,14 +30,14 @@ type AIMessage = {
 // Admin email for general topics management
 const GENERAL_TOPICS_ADMIN_EMAIL = "steve.darlow@gmail.com";
 
-// Fallback topics when database is empty - MUST match TOPIC_ORDER below
-// Order: General, Hiring, Fundraising, Bugs & Requests, Events (Events last and will be wide)
+// Fallback topics when database is empty
+// Order is controlled by display_order (admin can reorder)
 const FALLBACK_TOPICS = [
-  { id: "general", slug: "general", name: "General", icon: "💬", description: "", created_at: "" },
-  { id: "hiring", slug: "hiring", name: "Hiring", icon: "💼", description: "", created_at: "" },
-  { id: "fundraising", slug: "fundraising", name: "Fundraising", icon: "💰", description: "", created_at: "" },
-  { id: "bugs-requests", slug: "bugs-requests", name: "Bugs & Requests", icon: "🐛", description: "", created_at: "" },
-  { id: "events", slug: "events", name: "Events", icon: "📅", description: "", created_at: "" },
+  { id: "general", slug: "general", name: "General", icon: "💬", description: "", created_at: "", display_order: 0 },
+  { id: "hiring", slug: "hiring", name: "Hiring", icon: "💼", description: "", created_at: "", display_order: 1 },
+  { id: "fundraising", slug: "fundraising", name: "Fundraising", icon: "💰", description: "", created_at: "", display_order: 2 },
+  { id: "bugs-requests", slug: "bugs-requests", name: "Bugs & Requests", icon: "🐛", description: "", created_at: "", display_order: 3 },
+  { id: "events", slug: "events", name: "Events", icon: "📅", description: "", created_at: "", display_order: 4 },
 ];
 
 type MessageWithProfile = Message & {
@@ -111,6 +111,9 @@ export default function Chat() {
   const [showGroupActions, setShowGroupActions] = useState(false);
   const [showAdminTransfer, setShowAdminTransfer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRenameGroup, setShowRenameGroup] = useState(false);
+  const [groupRenameEmoji, setGroupRenameEmoji] = useState("");
+  const [groupRenameName, setGroupRenameName] = useState("");
 
   // Topic admin state
   const [topicToManage, setTopicToManage] = useState<{ id: string; name: string; icon: string } | null>(null);
@@ -119,6 +122,13 @@ export default function Chat() {
   const [topicEditIcon, setTopicEditIcon] = useState("");
   const [showTopicMembers, setShowTopicMembers] = useState(false);
   const [showKickConfirm, setShowKickConfirm] = useState<{ userId: string; userName: string } | null>(null);
+  const [showCreateTopic, setShowCreateTopic] = useState(false);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [newTopicIcon, setNewTopicIcon] = useState("");
+  const [isReorderingTopics, setIsReorderingTopics] = useState(false);
+  const [pendingTopicOrder, setPendingTopicOrder] = useState<{ id: string; displayOrder: number }[]>([]);
+  const [isReorderingGroups, setIsReorderingGroups] = useState(false);
+  const [pendingGroupOrder, setPendingGroupOrder] = useState<{ id: string; displayOrder: number }[]>([]);
 
   // Image/file upload state (for previewing before send)
   const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([]);
@@ -287,6 +297,22 @@ export default function Chat() {
       description: `${userName} has been kicked from this topic.`,
     });
     setShowKickConfirm(null);
+
+    // Send push notification to kicked user
+    const topicName = displayTopics.find((t) => t.id === activeTopic)?.name || "topic";
+    try {
+      await fetch("/api/notify/topic-kick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          receiverId: userId,
+          adminName: currentUserProfile?.name || "Admin",
+          topicName,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to send kick notification:", err);
+    }
   };
 
   // Invite user back to topic (admin only)
@@ -311,6 +337,23 @@ export default function Chat() {
       title: "User invited back",
       description: `${userName} can now participate in this topic again.`,
     });
+
+    // Send push notification to user being invited back
+    const topicName = displayTopics.find((t) => t.id === activeTopic)?.name || "topic";
+    try {
+      await fetch("/api/notify/topic-invite-back", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          receiverId: userId,
+          adminName: currentUserProfile?.name || "Admin",
+          topicName,
+          topicId: activeTopic,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to send invite back notification:", err);
+    }
   };
 
   // Delete any message (admin only)
@@ -399,6 +442,129 @@ export default function Chat() {
       setTopicEditIcon(topic.icon || "💬");
       setShowTopicManageModal(true);
     }
+  };
+
+  // Create new topic (admin only)
+  const handleCreateTopic = async () => {
+    if (!isGeneralTopicAdmin || !newTopicName.trim()) return;
+
+    // Get the max display_order
+    const maxOrder = displayTopics.reduce((max, t) => Math.max(max, t.display_order || 0), 0);
+
+    const slug = newTopicName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+    const { error } = await supabase
+      .from("topics")
+      .insert({
+        name: newTopicName.trim(),
+        icon: newTopicIcon.trim() || "💬",
+        slug,
+        display_order: maxOrder + 1,
+      });
+
+    if (error) {
+      console.error("Error creating topic:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to create topic",
+        description: error.message,
+      });
+      return;
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["topics"] });
+    toast({
+      title: "Topic created",
+      description: `Topic "${newTopicName}" has been created.`,
+    });
+    setShowCreateTopic(false);
+    setNewTopicName("");
+    setNewTopicIcon("");
+  };
+
+  // Start reordering topics (admin only)
+  const startReorderingTopics = () => {
+    setShowTopicManageModal(false);
+    setIsReorderingTopics(true);
+    setPendingTopicOrder([]);
+  };
+
+  // Handle topic reorder changes
+  const handleTopicReorder = (reorderedItems: { id: string; displayOrder: number }[]) => {
+    setPendingTopicOrder(reorderedItems);
+  };
+
+  // Save topic order (admin only)
+  const saveTopicOrder = async () => {
+    if (!isGeneralTopicAdmin || pendingTopicOrder.length === 0) {
+      setIsReorderingTopics(false);
+      return;
+    }
+
+    // Update each topic's display_order
+    for (const item of pendingTopicOrder) {
+      await supabase
+        .from("topics")
+        .update({ display_order: item.displayOrder })
+        .eq("id", item.id);
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["topics"] });
+    toast({
+      title: "Topic order saved",
+      description: "All users will now see topics in this order.",
+    });
+    setIsReorderingTopics(false);
+    setPendingTopicOrder([]);
+  };
+
+  // Cancel topic reordering
+  const cancelTopicReordering = () => {
+    setIsReorderingTopics(false);
+    setPendingTopicOrder([]);
+  };
+
+  // Start reordering groups (for current user)
+  const startReorderingGroups = () => {
+    setShowGroupActions(false);
+    setIsReorderingGroups(true);
+    setPendingGroupOrder([]);
+  };
+
+  // Handle group reorder changes
+  const handleGroupReorder = (reorderedItems: { id: string; displayOrder: number }[]) => {
+    setPendingGroupOrder(reorderedItems);
+  };
+
+  // Save group order (for current user)
+  const saveGroupOrder = async () => {
+    if (!user || pendingGroupOrder.length === 0) {
+      setIsReorderingGroups(false);
+      return;
+    }
+
+    // Update each group membership's display_order
+    for (const item of pendingGroupOrder) {
+      await supabase
+        .from("group_chat_members")
+        .update({ display_order: item.displayOrder })
+        .eq("group_id", item.id)
+        .eq("user_id", user.id);
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    toast({
+      title: "Group order saved",
+      description: "Your groups are now in your preferred order.",
+    });
+    setIsReorderingGroups(false);
+    setPendingGroupOrder([]);
+  };
+
+  // Cancel group reordering
+  const cancelGroupReordering = () => {
+    setIsReorderingGroups(false);
+    setPendingGroupOrder([]);
   };
 
   // Topic follow for notifications
@@ -574,31 +740,17 @@ export default function Chat() {
     }
   }, [dmUserId, groupIdFromUrl, tabFromUrl, markMessagesAsRead, markGroupAsRead]);
 
-  /// Custom topic order: General, Hiring, Fundraising, Bugs & Requests, Events (Events last for wide tile)
-  const TOPIC_ORDER = ["general", "hiring", "fundraising", "bugs-requests", "events"];
-
-  // Fetch topics
+  // Fetch topics - sorted by display_order (admin-controlled)
   const { data: topics, isLoading: topicsLoading } = useQuery({
     queryKey: ["topics"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("topics")
         .select("*")
-        .order("created_at", { ascending: true });
+        .order("display_order", { ascending: true });
 
       if (error) throw error;
-
-      const sortedData = (data as Topic[]).sort((a, b) => {
-        const aIndex = TOPIC_ORDER.indexOf(a.slug?.toLowerCase() || a.name.toLowerCase());
-        const bIndex = TOPIC_ORDER.indexOf(b.slug?.toLowerCase() || b.name.toLowerCase());
-
-        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-        if (aIndex !== -1) return -1;
-        if (bIndex !== -1) return 1;
-        return 0;
-      });
-
-      return sortedData;
+      return data as Topic[];
     },
     staleTime: Infinity,
     gcTime: Infinity,
@@ -770,6 +922,7 @@ export default function Chat() {
             membership_status: membership.status,
             membership_role: membership.role,
             notifications_enabled: membership.notifications_enabled ?? true,
+            display_order: membership.display_order ?? 0,
             unread_count: unreadCount,
             latest_message_at: latestMsg?.created_at || group.created_at,
           };
@@ -2021,6 +2174,63 @@ export default function Chat() {
     toast({ title: "Group deleted" });
   };
 
+  // Open rename group modal (admin only)
+  const openRenameGroup = () => {
+    if (!activeGroupData) return;
+    setGroupRenameEmoji(activeGroupData.emojis?.join("") || "");
+    setGroupRenameName(activeGroupData.name || "");
+    setShowGroupActions(false);
+    setShowRenameGroup(true);
+  };
+
+  // Rename group (admin only)
+  const handleRenameGroup = async () => {
+    if (!user || !activeGroup || !activeGroupData) return;
+
+    const oldName = activeGroupData.name || activeGroupData.emojis?.join("") || "Group";
+    const newName = groupRenameName.trim() || groupRenameEmoji || "Group";
+    const newEmojis = groupRenameEmoji ? [groupRenameEmoji] : activeGroupData.emojis || [];
+
+    const { error } = await supabase
+      .from("group_chats")
+      .update({
+        name: groupRenameName.trim() || null,
+        emojis: newEmojis,
+      })
+      .eq("id", activeGroup);
+
+    if (error) {
+      console.error("Error renaming group:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to rename group",
+        description: error.message,
+      });
+      return;
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    setShowRenameGroup(false);
+    toast({ title: "Group renamed", description: `Group renamed to "${newName}"` });
+
+    // Send push notification to all members
+    try {
+      await fetch("/api/notify/group-rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupId: activeGroup,
+          oldName,
+          newName,
+          adminId: user.id,
+          adminName: currentUserProfile?.name || "Admin",
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to send group rename notification:", err);
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && pendingImages.length === 0 && pendingFiles.length === 0) return;
@@ -2716,6 +2926,7 @@ export default function Chat() {
               <ChatTileGrid
                 items={(groupChats || [])
                   .filter((g: any) => g.membership_status === "accepted")
+                  .sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0))
                   .map((g: any) => ({
                     id: g.id,
                     emoji: g.emojis,
@@ -2723,13 +2934,18 @@ export default function Chat() {
                     subtitle: getGroupMemberNames(g), // Always show member names below
                     unreadCount: g.unread_count,
                     isAdmin: g.membership_role === "admin",
+                    displayOrder: g.display_order,
                   }))}
-                onSelect={handleSelectGroup}
-                onLongPress={handleGroupLongPress}
-                showCreate
+                onSelect={isReorderingGroups ? () => {} : handleSelectGroup}
+                onLongPress={!isReorderingGroups ? handleGroupLongPress : undefined}
+                showCreate={!isReorderingGroups}
                 onCreateClick={() => setShowCreateGroup(true)}
                 onAccept={handleAcceptGroupInvite}
                 onDecline={handleDeclineGroupInvite}
+                isReordering={isReorderingGroups}
+                onReorder={handleGroupReorder}
+                onReorderCancel={cancelGroupReordering}
+                onReorderSave={saveGroupOrder}
               />
             )}
 
@@ -2781,10 +2997,16 @@ export default function Chat() {
                   emoji: t.icon || "💬",
                   name: t.name,
                   unreadCount: topicUnreadCounts?.[t.id] || 0,
-                  isWide: t.slug === "events" || t.name.toLowerCase() === "events",
+                  displayOrder: t.display_order,
                 }))}
-                onSelect={handleSelectTopic}
-                onLongPress={isGeneralTopicAdmin ? handleTopicLongPress : undefined}
+                onSelect={isReorderingTopics ? () => {} : handleSelectTopic}
+                onLongPress={isGeneralTopicAdmin && !isReorderingTopics ? handleTopicLongPress : undefined}
+                showCreate={isGeneralTopicAdmin && !isReorderingTopics}
+                onCreateClick={() => setShowCreateTopic(true)}
+                isReordering={isReorderingTopics}
+                onReorder={handleTopicReorder}
+                onReorderCancel={cancelTopicReordering}
+                onReorderSave={saveTopicOrder}
               />
             )}
 
@@ -3391,6 +3613,13 @@ export default function Chat() {
             </div>
             <div className="p-4 space-y-2">
               <button
+                onClick={startReorderingGroups}
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
+              >
+                <GripVertical className="h-5 w-5" />
+                Move Groups
+              </button>
+              <button
                 onClick={handleLeaveGroup}
                 className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
               >
@@ -3398,18 +3627,82 @@ export default function Chat() {
                 Leave Group
               </button>
               {activeGroupData.membership_role === "admin" && (
-                <button
-                  onClick={handleDeleteGroup}
-                  className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 transition-colors text-red-500"
-                >
-                  <Trash2 className="h-5 w-5" />
-                  Delete Group
-                </button>
+                <>
+                  <button
+                    onClick={openRenameGroup}
+                    className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
+                  >
+                    <Pencil className="h-5 w-5" />
+                    Rename Group
+                  </button>
+                  <button
+                    onClick={handleDeleteGroup}
+                    className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 transition-colors text-red-500"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                    Delete Group
+                  </button>
+                </>
               )}
             </div>
             <div className="p-4 border-t">
               <button
                 onClick={() => setShowGroupActions(false)}
+                className="w-full p-3 rounded-xl border border-border hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Group Modal (Admin Only) */}
+      {showRenameGroup && activeGroupData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowRenameGroup(false)}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="p-4 text-center border-b">
+              <h2 className="text-lg font-semibold">Rename Group</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Change the group's emoji and name
+              </p>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Group Emoji</label>
+                <Input
+                  value={groupRenameEmoji}
+                  onChange={(e) => setGroupRenameEmoji(e.target.value)}
+                  placeholder="Enter emoji(s)"
+                  className="text-center text-2xl"
+                  maxLength={4}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Group Name (optional)</label>
+                <Input
+                  value={groupRenameName}
+                  onChange={(e) => setGroupRenameName(e.target.value)}
+                  placeholder="Enter group name"
+                  maxLength={50}
+                />
+              </div>
+            </div>
+            <div className="p-4 space-y-2 border-t">
+              <button
+                onClick={handleRenameGroup}
+                disabled={!groupRenameEmoji.trim() && !groupRenameName.trim()}
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-primary hover:bg-primary/90 transition-colors text-primary-foreground disabled:opacity-50"
+              >
+                <Pencil className="h-5 w-5" />
+                Save Changes
+              </button>
+              <button
+                onClick={() => setShowRenameGroup(false)}
                 className="w-full p-3 rounded-xl border border-border hover:bg-muted transition-colors"
               >
                 Cancel
@@ -3564,11 +3857,77 @@ export default function Chat() {
                 </button>
               </div>
               <button
+                onClick={startReorderingTopics}
+                className="w-full mt-3 p-3 rounded-xl border border-border text-foreground hover:bg-muted transition-colors font-medium"
+              >
+                Move Topics
+              </button>
+              <button
                 onClick={handleDeleteTopic}
                 className="w-full mt-3 p-3 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors font-medium"
               >
                 Delete Topic
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Topic Modal (Admin Only) */}
+      {showCreateTopic && isGeneralTopicAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              setShowCreateTopic(false);
+              setNewTopicName("");
+              setNewTopicIcon("");
+            }}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="p-6">
+              <h2 className="text-lg font-semibold mb-4">Create New Topic</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Emoji</label>
+                  <Input
+                    value={newTopicIcon}
+                    onChange={(e) => setNewTopicIcon(e.target.value)}
+                    placeholder="💬"
+                    className="mt-1 text-2xl text-center"
+                    maxLength={4}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Topic Name</label>
+                  <Input
+                    value={newTopicName}
+                    onChange={(e) => setNewTopicName(e.target.value)}
+                    placeholder="Enter topic name"
+                    className="mt-1"
+                    maxLength={50}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowCreateTopic(false);
+                    setNewTopicName("");
+                    setNewTopicIcon("");
+                  }}
+                  className="flex-1 p-3 rounded-xl border border-border hover:bg-muted transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateTopic}
+                  disabled={!newTopicName.trim()}
+                  className="flex-1 p-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-colors font-medium disabled:opacity-50"
+                >
+                  Create
+                </button>
+              </div>
             </div>
           </div>
         </div>
