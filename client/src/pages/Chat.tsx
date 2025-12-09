@@ -1904,19 +1904,43 @@ export default function Chat() {
   const getGroupDisplayName = (group: any) => {
     if (group.name) return group.name;
 
-    // Show member first names
-    const members = group.members?.filter((m: any) => m.status === "accepted" && m.user_id !== user?.id) || [];
-    if (members.length === 0) return group.emojis?.join("") || "Group";
+    // Get all accepted members (including current user for proper count)
+    const allMembers = group.members?.filter((m: any) => m.status === "accepted") || [];
+    if (allMembers.length === 0) return group.emojis?.join("") || "Group";
 
-    const names = members
-      .slice(0, 2)
-      .map((m: any) => m.profiles?.name?.split(" ")[0] || "")
-      .filter(Boolean);
+    // Sort: admin first, then by join date
+    const sortedMembers = [...allMembers].sort((a: any, b: any) => {
+      if (a.role === "admin" && b.role !== "admin") return -1;
+      if (a.role !== "admin" && b.role === "admin") return 1;
+      return new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime();
+    });
 
-    if (members.length > 2) {
-      return `${names.join(", ")} +${members.length - 2}`;
+    // Get first names
+    const getFirstName = (m: any) => m.profiles?.name?.split(" ")[0] || "";
+
+    // Only 1 member (the admin)
+    if (sortedMembers.length === 1) {
+      const adminName = getFirstName(sortedMembers[0]);
+      return adminName ? `Admin ${adminName}` : group.emojis?.join("") || "Group";
     }
-    return names.join(", ") || group.emojis?.join("") || "Group";
+
+    // 2 members - "Steve and Derek"
+    if (sortedMembers.length === 2) {
+      const name1 = getFirstName(sortedMembers[0]);
+      const name2 = getFirstName(sortedMembers[1]);
+      if (name1 && name2) return `${name1} and ${name2}`;
+      return name1 || name2 || group.emojis?.join("") || "Group";
+    }
+
+    // 3+ members - "Steve, Derek + 2"
+    const name1 = getFirstName(sortedMembers[0]);
+    const name2 = getFirstName(sortedMembers[1]);
+    const remaining = sortedMembers.length - 2;
+
+    if (name1 && name2) {
+      return `${name1}, ${name2} + ${remaining}`;
+    }
+    return group.emojis?.join("") || "Group";
   };
 
   // Handle back button
