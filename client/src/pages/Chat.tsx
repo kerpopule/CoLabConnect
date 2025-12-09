@@ -100,10 +100,11 @@ export default function Chat() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const scrollViewportRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
   // Fetch muted users for the current user
   const { data: mutedUserIds = [] } = useQuery({
@@ -195,6 +196,46 @@ export default function Chat() {
       localStorage.setItem("colab-ai-messages", JSON.stringify(aiMessages));
     }
   }, [aiMessages]);
+
+  // Detect keyboard visibility on mobile (for hiding tab bar)
+  useEffect(() => {
+    // Check if VisualViewport API is available
+    if (!window.visualViewport) return;
+
+    const handleResize = () => {
+      // Compare visual viewport height to window height
+      // When keyboard opens, visual viewport becomes smaller
+      const isKeyboard = window.visualViewport!.height < window.innerHeight * 0.75;
+      setIsKeyboardOpen(isKeyboard);
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  // Auto-resize textarea based on content
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    // Reset height to auto to get correct scrollHeight
+    e.target.style.height = 'auto';
+    // Set height to scrollHeight (capped at 150px)
+    const newHeight = Math.min(e.target.scrollHeight, 150);
+    e.target.style.height = `${newHeight}px`;
+  };
+
+  // Handle keyboard shortcuts in textarea
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Submit on Ctrl+Enter or Cmd+Enter, not on plain Enter
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (input.trim()) {
+        handleSend(e as unknown as React.FormEvent);
+      }
+    }
+    // Plain Enter adds a new line (default behavior)
+  };
 
   // Mark messages as read when opening a private chat
   const markMessagesAsRead = useCallback(async (senderId: string) => {
@@ -1623,6 +1664,10 @@ export default function Chat() {
 
     const content = input.trim();
     setInput("");
+    // Reset textarea height after sending
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
 
     inputRef.current?.focus();
     requestAnimationFrame(() => {
@@ -2450,7 +2495,7 @@ export default function Chat() {
 
             {/* Input Area */}
             <div className="shrink-0 p-3 md:p-4 pb-safe bg-card border-t border-border sticky bottom-0">
-              <form onSubmit={handleSend} className="flex gap-2 relative">
+              <form onSubmit={handleSend} className="flex gap-2 items-end relative">
                 {isAiChat ? (
                   <Button
                     type="button"
@@ -2530,10 +2575,11 @@ export default function Chat() {
                     disabled={isPending}
                   />
                 )}
-                <Input
+                <textarea
                   ref={inputRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
                   placeholder={
                     isAiChat
                       ? "Ask the AI anything..."
@@ -2543,14 +2589,16 @@ export default function Chat() {
                       ? `Message ${activeGroupData?.name || "group"}...`
                       : `Message #${currentTopic?.name || "chat"}...`
                   }
-                  className="rounded-full bg-muted/50 border-transparent focus:bg-background transition-all pr-12"
+                  className="flex-1 min-h-[40px] max-h-[150px] py-2.5 px-4 rounded-2xl bg-muted/50 border-transparent focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all pr-12 resize-none text-[15px] leading-relaxed overflow-y-auto"
                   disabled={isPending}
+                  rows={1}
                 />
                 <Button
                   type="submit"
                   size="icon"
-                  className="absolute right-1 top-1 h-8 w-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-transform hover:scale-105"
+                  className="absolute right-1 bottom-1 h-8 w-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-transform hover:scale-105"
                   disabled={!input.trim() || isPending}
+                  title="Send (Ctrl+Enter)"
                 >
                   {isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

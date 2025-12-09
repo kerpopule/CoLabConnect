@@ -21,6 +21,7 @@ import { saveLastRoute } from "@/pages/Home";
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [isDark, setIsDark] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const { user, profile, signOut, loading } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -117,6 +118,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Detect keyboard visibility on mobile (for hiding tab bar)
+  useEffect(() => {
+    // Check if VisualViewport API is available
+    if (!window.visualViewport) return;
+
+    const handleResize = () => {
+      // Compare visual viewport height to window height
+      // When keyboard opens, visual viewport becomes smaller
+      const isKeyboard = window.visualViewport!.height < window.innerHeight * 0.75;
+      setIsKeyboardOpen(isKeyboard);
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   const handleSignOut = async () => {
     try {
       await signOut();
@@ -202,7 +221,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [location, user]);
 
   return (
-    <div className={`bg-background flex flex-col pb-24 md:pb-0 font-sans ${isChatPage ? "h-dvh overflow-hidden fixed inset-0 md:relative md:h-screen" : "min-h-screen"}`}>
+    <div className={`bg-background flex flex-col ${isKeyboardOpen ? 'pb-0' : 'pb-24'} md:pb-0 font-sans ${isChatPage ? "h-dvh overflow-hidden fixed inset-0 md:relative md:h-screen" : "min-h-screen"}`}>
       {/* Mobile Top Bar - only show on profile page */}
       {(location === "/my-profile" || location === "/profile/edit") && (
         <header className="md:hidden flex justify-end items-center p-4 fixed top-0 left-0 right-0 z-50">
@@ -218,7 +237,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Desktop Sidebar / Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-lg border-t border-border md:top-0 md:bottom-auto md:w-64 md:h-screen md:border-r md:border-t-0 md:flex md:flex-col md:p-6">
+      <nav className={`fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-lg border-t border-border md:top-0 md:bottom-auto md:w-64 md:h-screen md:border-r md:border-t-0 md:flex md:flex-col md:p-6 transition-transform duration-200 ${isKeyboardOpen ? 'translate-y-full md:translate-y-0' : ''}`}>
         <div className="hidden md:block mb-8">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-display font-bold text-primary">Co:Lab</h1>

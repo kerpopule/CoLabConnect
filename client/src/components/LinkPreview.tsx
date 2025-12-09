@@ -156,16 +156,48 @@ export function LinkPreview({ url }: LinkPreviewProps) {
   );
 }
 
+// Character limit for expandable messages
+const MESSAGE_CHAR_LIMIT = 240;
+
 // Message content with inline links and previews
 export function MessageContent({ content }: { content: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const parts = parseMessageWithLinks(content);
   const urls = extractUrls(content);
   const firstUrl = urls[0]; // Only show preview for the first URL
 
+  const isLongMessage = content.length > MESSAGE_CHAR_LIMIT;
+  const displayContent = isLongMessage && !isExpanded
+    ? content.slice(0, MESSAGE_CHAR_LIMIT)
+    : content;
+  const displayParts = parseMessageWithLinks(displayContent);
+
+  // Close expanded message when clicking outside
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Don't collapse if clicking on a link inside the message
+      if (target.tagName === 'A') return;
+      setIsExpanded(false);
+    };
+
+    // Add a small delay to prevent immediate collapse
+    const timer = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [isExpanded]);
+
   return (
     <div>
-      <span className="whitespace-pre-wrap break-words">
-        {parts.map((part, index) =>
+      <span className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
+        {displayParts.map((part, index) =>
           part.type === 'link' ? (
             <a
               key={index}
@@ -179,6 +211,17 @@ export function MessageContent({ content }: { content: string }) {
           ) : (
             <span key={index}>{part.content}</span>
           )
+        )}
+        {isLongMessage && !isExpanded && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(true);
+            }}
+            className="text-primary hover:text-primary/80 font-medium ml-1 inline"
+          >
+            ...more
+          </button>
         )}
       </span>
       {firstUrl && <LinkPreview url={firstUrl} />}
