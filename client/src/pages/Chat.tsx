@@ -2339,7 +2339,7 @@ export default function Chat() {
                 <>
                   <span className="text-xl">{activeGroupData.emojis?.join("") || "👥"}</span>
                   <span className="font-medium truncate">
-                    {activeGroupData.name || getGroupDisplayName(activeGroupData)}
+                    {activeGroupData.name || getGroupMemberNames(activeGroupData) || "Group Chat"}
                   </span>
                   {/* Invite button */}
                   <button
@@ -2432,7 +2432,7 @@ export default function Chat() {
                           {g.emojis?.join("") || "👥"}
                         </div>
                         <span className="text-xs sm:text-sm font-medium text-center line-clamp-1 mb-2 text-muted-foreground">
-                          {g.name || getGroupDisplayName(g)}
+                          {g.name || getGroupMemberNames(g) || "Group"}
                         </span>
                         <div className="flex gap-2 w-full">
                           <button
