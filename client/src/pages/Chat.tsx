@@ -398,7 +398,8 @@ export default function Chat() {
       });
       return;
     }
-    queryClient.invalidateQueries({ queryKey: ["topics"] });
+    // Force refetch since topics query has staleTime: Infinity
+    await queryClient.refetchQueries({ queryKey: ["topics"] });
     toast({
       title: "Topic updated",
       description: `Topic renamed to "${topicEditName}".`,
@@ -423,7 +424,8 @@ export default function Chat() {
       });
       return;
     }
-    queryClient.invalidateQueries({ queryKey: ["topics"] });
+    // Force refetch since topics query has staleTime: Infinity
+    await queryClient.refetchQueries({ queryKey: ["topics"] });
     toast({
       title: "Topic deleted",
       description: `Topic "${topicToManage.name}" has been deleted.`,
@@ -472,7 +474,8 @@ export default function Chat() {
       return;
     }
 
-    queryClient.invalidateQueries({ queryKey: ["topics"] });
+    // Force refetch since topics query has staleTime: Infinity
+    await queryClient.refetchQueries({ queryKey: ["topics"] });
     toast({
       title: "Topic created",
       description: `Topic "${newTopicName}" has been created.`,
@@ -509,7 +512,8 @@ export default function Chat() {
         .eq("id", item.id);
     }
 
-    queryClient.invalidateQueries({ queryKey: ["topics"] });
+    // Force refetch since topics query has staleTime: Infinity
+    await queryClient.refetchQueries({ queryKey: ["topics"] });
     toast({
       title: "Topic order saved",
       description: "All users will now see topics in this order.",
