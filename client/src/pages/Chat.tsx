@@ -2785,7 +2785,7 @@ export default function Chat() {
             )}
 
             {/* Input Area */}
-            <div className="shrink-0 p-3 md:p-4 pb-safe bg-card border-t border-border sticky bottom-0">
+            <div className="shrink-0 px-3 py-2 md:px-4 md:py-3 pb-safe bg-card border-t border-border sticky bottom-0">
               {/* Image and file previews before sending */}
               {(pendingImages.length > 0 || pendingFiles.length > 0) && (
                 <div className="mb-3 flex gap-2 flex-wrap items-end">
@@ -2825,7 +2825,7 @@ export default function Chat() {
                   ))}
                 </div>
               )}
-              <form onSubmit={handleSend} className="flex gap-2 items-end relative">
+              <form onSubmit={handleSend} className="flex gap-2 items-center relative">
                 {isAiChat ? (
                   <Button
                     type="button"
@@ -2913,7 +2913,7 @@ export default function Chat() {
                 <Button
                   type="submit"
                   size="icon"
-                  className="absolute right-1.5 bottom-1.5 h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-transform hover:scale-105"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-transform hover:scale-105"
                   disabled={(!input.trim() && pendingImages.length === 0 && pendingFiles.length === 0) || isPending || isUploadingImages}
                   title="Send (Ctrl+Enter)"
                 >
