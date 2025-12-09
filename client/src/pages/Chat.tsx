@@ -512,54 +512,58 @@ export default function Chat() {
       return;
     }
 
-    // Update each topic's display_order
-    for (const item of pendingTopicOrder) {
-      console.log('[Topic Reorder] Updating topic', item.id, 'to order', item.displayOrder);
-      const { error } = await supabase
-        .from("topics")
-        .update({ display_order: item.displayOrder })
-        .eq("id", item.id);
-      if (error) {
-        console.error('[Topic Reorder] Error updating topic:', error);
+    // Use server API to update topics (bypasses RLS with service role key)
+    console.log('[Topic Reorder] Calling server API to reorder topics...');
+    try {
+      const response = await fetch("/api/topics/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: pendingTopicOrder,
+          adminEmail: user?.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('[Topic Reorder] Server error:', result.error);
+        toast({
+          variant: "destructive",
+          title: "Error saving order",
+          description: result.error || "Failed to save topic order",
+        });
+        setIsReorderingTopics(false);
+        setPendingTopicOrder([]);
+        return;
       }
-    }
 
-    // Fetch fresh data directly and update the cache
-    console.log('[Topic Reorder] Fetching fresh topics from DB...');
-    const { data: freshTopics, error: fetchError } = await supabase
-      .from("topics")
-      .select("*")
-      .order("display_order", { ascending: true });
+      console.log('[Topic Reorder] Server returned updated topics:', result.topics);
 
-    if (fetchError) {
-      console.error('[Topic Reorder] Error fetching topics:', fetchError);
+      // Update React Query cache with fresh data from server
+      queryClient.setQueryData(["topics"], result.topics);
+
+      toast({
+        title: "Topic order saved",
+        description: "All users will now see topics in this order.",
+      });
+
+      // Delay exiting reorder mode to allow React to re-render with new data first
+      setTimeout(() => {
+        console.log('[Topic Reorder] Exiting reorder mode');
+        setIsReorderingTopics(false);
+        setPendingTopicOrder([]);
+      }, 100);
+    } catch (error: any) {
+      console.error('[Topic Reorder] Network error:', error);
       toast({
         variant: "destructive",
         title: "Error saving order",
-        description: fetchError.message,
+        description: "Network error - please try again",
       });
       setIsReorderingTopics(false);
       setPendingTopicOrder([]);
-      return;
     }
-
-    console.log('[Topic Reorder] Fresh topics:', freshTopics);
-
-    // Update React Query cache with fresh data - this triggers re-render
-    queryClient.setQueryData(["topics"], freshTopics);
-
-    toast({
-      title: "Topic order saved",
-      description: "All users will now see topics in this order.",
-    });
-
-    // Delay exiting reorder mode to allow React to re-render with new data first
-    // This ensures ChatTileGrid receives the updated items before switching display modes
-    setTimeout(() => {
-      console.log('[Topic Reorder] Exiting reorder mode');
-      setIsReorderingTopics(false);
-      setPendingTopicOrder([]);
-    }, 100);
   };
 
   // Cancel topic reordering

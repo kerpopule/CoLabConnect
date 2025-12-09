@@ -332,6 +332,55 @@ export async function registerRoutes(
     }
   });
 
+  // Reorder topics (admin only - uses service role key to bypass RLS)
+  app.post("/api/topics/reorder", async (req, res) => {
+    try {
+      const { items, adminEmail } = req.body;
+
+      // Verify admin email
+      if (adminEmail?.toLowerCase() !== "steve.darlow@gmail.com") {
+        return res.status(403).json({ error: "Only admin can reorder topics" });
+      }
+
+      if (!items || !Array.isArray(items)) {
+        return res.status(400).json({ error: "items array is required" });
+      }
+
+      log(`[Topic Reorder] Admin reordering ${items.length} topics`);
+
+      // Update each topic's display_order using service role key
+      for (const item of items) {
+        const { error } = await supabase
+          .from("topics")
+          .update({ display_order: item.displayOrder })
+          .eq("id", item.id);
+
+        if (error) {
+          log(`[Topic Reorder] Error updating topic ${item.id}: ${error.message}`);
+          return res.status(500).json({ error: `Failed to update topic: ${error.message}` });
+        }
+        log(`[Topic Reorder] Updated topic ${item.id} to order ${item.displayOrder}`);
+      }
+
+      // Fetch and return the updated topics
+      const { data: updatedTopics, error: fetchError } = await supabase
+        .from("topics")
+        .select("*")
+        .order("display_order", { ascending: true });
+
+      if (fetchError) {
+        log(`[Topic Reorder] Error fetching updated topics: ${fetchError.message}`);
+        return res.status(500).json({ error: "Failed to fetch updated topics" });
+      }
+
+      log(`[Topic Reorder] Successfully reordered topics`);
+      res.json({ success: true, topics: updatedTopics });
+    } catch (error: any) {
+      log(`[Topic Reorder] Error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Check if following a topic
   app.get("/api/topics/:topicId/following", async (req, res) => {
     try {
