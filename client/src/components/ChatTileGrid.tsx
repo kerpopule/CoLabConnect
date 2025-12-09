@@ -5,6 +5,7 @@ interface TileItem {
   id: string;
   emoji?: string | string[];
   name: string;
+  subtitle?: string; // Small text under the name (e.g., member names)
   unreadCount?: number;
   isPending?: boolean;
   isCreate?: boolean;
@@ -157,7 +158,7 @@ function TileButton({ item, onSelect, onAccept, onDecline, onLongPress }: TileBu
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
         onContextMenu={handleContextMenu}
-        className="w-full aspect-square rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-2 hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all cursor-pointer relative select-none"
+        className="w-full aspect-square rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-1 p-2 hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all cursor-pointer relative select-none"
       >
         {/* Emoji Display */}
         <div className="text-3xl sm:text-4xl">
@@ -165,9 +166,18 @@ function TileButton({ item, onSelect, onAccept, onDecline, onLongPress }: TileBu
             ? item.emoji.join("")
             : item.emoji || "💬"}
         </div>
-        <span className="text-sm font-medium text-center px-2 line-clamp-2">
-          {item.name}
-        </span>
+        {/* Title/Name */}
+        {item.name && (
+          <span className="text-sm font-medium text-center px-1 line-clamp-1">
+            {item.name}
+          </span>
+        )}
+        {/* Subtitle - member names */}
+        {item.subtitle && (
+          <span className="text-[10px] text-muted-foreground text-center px-1 line-clamp-1">
+            {item.subtitle}
+          </span>
+        )}
         {/* Unread Badge - inside tile, bottom right */}
         {typeof item.unreadCount === "number" && item.unreadCount > 0 && (
           <div className="absolute bottom-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">

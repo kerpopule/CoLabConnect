@@ -2009,13 +2009,11 @@ export default function Chat() {
     localStorage.setItem("colab-ai-messages", JSON.stringify([welcomeMessage]));
   };
 
-  // Get group display name - shows "Admin Steve" for 1 member, "Steve and Derek" for 2, "Steve, Derek + N" for more
-  const getGroupDisplayName = (group: any) => {
-    if (group.name) return group.name;
-
+  // Get member names subtitle for group tile - "Steve, Derek + 2" format
+  const getGroupMemberNames = (group: any): string => {
     // Get all accepted members
     const allMembers = group.members?.filter((m: any) => m.status === "accepted") || [];
-    if (allMembers.length === 0) return group.emojis?.join("") || "Group";
+    if (allMembers.length === 0) return "";
 
     // Sort: admin first, then by join date
     const sortedMembers = [...allMembers].sort((a: any, b: any) => {
@@ -2030,15 +2028,15 @@ export default function Chat() {
     // Only 1 member (the admin)
     if (sortedMembers.length === 1) {
       const adminName = getFirstName(sortedMembers[0]);
-      return adminName ? `Admin ${adminName}` : group.emojis?.join("") || "Group";
+      return adminName || "";
     }
 
-    // 2 members - "Steve and Derek"
+    // 2 members - "Steve & Derek"
     if (sortedMembers.length === 2) {
       const name1 = getFirstName(sortedMembers[0]);
       const name2 = getFirstName(sortedMembers[1]);
-      if (name1 && name2) return `${name1} and ${name2}`;
-      return name1 || name2 || group.emojis?.join("") || "Group";
+      if (name1 && name2) return `${name1} & ${name2}`;
+      return name1 || name2 || "";
     }
 
     // 3+ members - "Steve, Derek + 2"
@@ -2049,7 +2047,7 @@ export default function Chat() {
     if (name1 && name2) {
       return `${name1}, ${name2} + ${remaining}`;
     }
-    return group.emojis?.join("") || "Group";
+    return "";
   };
 
   // Handle back button
@@ -2402,7 +2400,8 @@ export default function Chat() {
                   .map((g: any) => ({
                     id: g.id,
                     emoji: g.emojis,
-                    name: g.name || getGroupDisplayName(g),
+                    name: g.name || "", // Show title if set, otherwise empty (just emojis)
+                    subtitle: getGroupMemberNames(g), // Always show member names below
                     unreadCount: g.unread_count,
                     isAdmin: g.membership_role === "admin",
                   }))}
