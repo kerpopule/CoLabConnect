@@ -908,8 +908,11 @@ export default function Chat() {
     if (error) {
       console.error("Error marking messages as read:", error);
     } else {
+      // Invalidate all DM-related queries to update badges immediately
       queryClient.invalidateQueries({ queryKey: ["unread-messages-count"] });
+      queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
       queryClient.refetchQueries({ queryKey: ["unread-messages-count"] });
+      queryClient.refetchQueries({ queryKey: ["dms-with-history", user.id] });
     }
   }, [user, queryClient]);
 
@@ -926,7 +929,9 @@ export default function Chat() {
     if (error) {
       console.error("Error marking group as read:", error);
     } else {
+      // Invalidate and refetch to update badges immediately
       queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+      queryClient.refetchQueries({ queryKey: ["group-chats", user.id] });
     }
   }, [user, queryClient]);
 
@@ -941,7 +946,9 @@ export default function Chat() {
     if (!user) return;
     const key = `topic_last_read_${user.id}_${topicId}`;
     localStorage.setItem(key, new Date().toISOString());
+    // Invalidate and refetch to update badges immediately
     queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+    queryClient.refetchQueries({ queryKey: ["topic-unread-counts", user.id] });
   }, [user, queryClient]);
 
   // Handle URL parameter changes for navigation from push notifications
@@ -1490,6 +1497,8 @@ export default function Chat() {
           const newMsg = payload.new as GroupMessage;
           // Don't update for own messages
           if (newMsg.user_id === user.id) return;
+          // Don't update if currently viewing this group (will be marked as read)
+          if (activeTab === "groups" && viewMode === "chat" && activeGroup === newMsg.group_id) return;
           // Invalidate group chats to update unread counts
           queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
         }
@@ -1499,7 +1508,83 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, queryClient]);
+  }, [user, queryClient, activeTab, viewMode, activeGroup]);
+
+  // Real-time subscription for new private messages (global - for unread counts in slider/tiles)
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`all-private-messages:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "private_messages",
+          filter: `receiver_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as PrivateMessage;
+          // Don't update for own messages (shouldn't happen with filter, but be safe)
+          if (newMsg.sender_id === user.id) return;
+          // Don't update if currently viewing this DM (will be marked as read)
+          if (activeTab === "dms" && viewMode === "chat" && activeDm === newMsg.sender_id) return;
+          // Invalidate DM queries to update unread counts immediately
+          queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
+          queryClient.invalidateQueries({ queryKey: ["unread-messages-count"] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "private_messages",
+          filter: `receiver_id=eq.${user.id}`,
+        },
+        () => {
+          // When messages are marked as read, update badges
+          queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
+          queryClient.invalidateQueries({ queryKey: ["unread-messages-count"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient, activeTab, viewMode, activeDm]);
+
+  // Real-time subscription for topic messages (global - for unread counts in slider/tiles)
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`all-topic-messages:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          const newMsg = payload.new as MessageWithProfile;
+          // Don't update for own messages
+          if (newMsg.user_id === user.id) return;
+          // Don't update if currently viewing this topic (will be marked as read)
+          if (activeTab === "general" && viewMode === "chat" && activeTopic === newMsg.topic_id) return;
+          // Invalidate topic unread counts
+          queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient, activeTab, viewMode, activeTopic]);
 
   // Scroll handling
   const checkIfAtBottom = useCallback(() => {
