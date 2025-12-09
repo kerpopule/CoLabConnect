@@ -537,7 +537,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
-      <main className={`flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full animate-in fade-in duration-500 transition-all duration-300 ${sidebarCollapsed ? 'md:pl-20' : 'md:pl-64'} ${isChatPage ? "overflow-hidden flex flex-col" : ""}`}>
+      <main className={`flex-1 p-4 md:py-8 md:pr-8 max-w-5xl w-full animate-in fade-in duration-500 transition-all duration-300 ${sidebarCollapsed ? 'md:pl-28' : 'md:pl-72'} ${isChatPage ? "overflow-hidden flex flex-col" : ""}`}>
         {children}
       </main>
 
