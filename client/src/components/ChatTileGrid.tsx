@@ -45,24 +45,33 @@ export default function ChatTileGrid({
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = useState<string | null>(null);
   const [localItems, setLocalItems] = useState<TileItem[]>(items);
+  // Track previous reordering state to detect when it ends
   const wasReorderingRef = useRef(isReordering);
+  // Track if a save operation just completed (to skip sync with stale props)
+  const skipNextSyncRef = useRef(false);
 
-  // Update local items when props change or when reordering ends
-  // This ensures we sync with fresh data after saving
+  // Detect when reordering ends
   useEffect(() => {
-    // When reordering ends (was true, now false), always sync with props
     if (wasReorderingRef.current && !isReordering) {
-      console.log('[ChatTileGrid] Reordering ended, syncing with props', items);
-      setLocalItems(items);
+      // Reordering just ended - skip the next props sync because localItems already has correct order
+      console.log('[ChatTileGrid] Reordering ended, skipping next sync');
+      skipNextSyncRef.current = true;
     }
     wasReorderingRef.current = isReordering;
-  }, [isReordering, items]);
+  }, [isReordering]);
 
-  // Also sync when items change while not reordering
+  // Sync with props, but skip once after reordering ends
   useEffect(() => {
-    if (!isReordering) {
-      setLocalItems(items);
+    if (isReordering) return; // Don't sync during reordering
+
+    if (skipNextSyncRef.current) {
+      console.log('[ChatTileGrid] Skipping sync, using local order:', localItems.map(i => i.name));
+      skipNextSyncRef.current = false;
+      return;
     }
+
+    console.log('[ChatTileGrid] Syncing with props:', items.map(i => i.name));
+    setLocalItems(items);
   }, [items, isReordering]);
 
   const handleDragStart = useCallback((e: React.DragEvent, itemId: string) => {
@@ -176,7 +185,8 @@ export default function ChatTileGrid({
     touchStartPos.current = null;
   }, [dragOverItem, localItems, onReorder]);
 
-  const displayItems = isReordering ? localItems : items;
+  // Always use localItems - it's kept in sync with props except right after reordering
+  const displayItems = localItems;
 
   return (
     <div className="relative">
