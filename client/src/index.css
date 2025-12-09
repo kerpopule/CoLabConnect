@@ -179,9 +179,9 @@ label {
   touch-action: auto !important;
 }
 
-/* Safe area padding for notched devices */
+/* Safe area padding for notched devices - small base + safe area */
 .pb-safe {
-  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* Dynamic viewport height for mobile - accounts for browser chrome */
