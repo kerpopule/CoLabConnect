@@ -1,5 +1,5 @@
 import { Plus, GripVertical } from "lucide-react";
-import { useRef, useCallback, useState } from "react";
+import { useRef, useCallback, useState, useEffect } from "react";
 
 interface TileItem {
   id: string;
@@ -45,13 +45,25 @@ export default function ChatTileGrid({
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = useState<string | null>(null);
   const [localItems, setLocalItems] = useState<TileItem[]>(items);
+  const wasReorderingRef = useRef(isReordering);
 
-  // Update local items when props change (but not during reordering)
-  const itemsRef = useRef(items);
-  if (!isReordering && items !== itemsRef.current) {
-    itemsRef.current = items;
-    setLocalItems(items);
-  }
+  // Update local items when props change or when reordering ends
+  // This ensures we sync with fresh data after saving
+  useEffect(() => {
+    // When reordering ends (was true, now false), always sync with props
+    if (wasReorderingRef.current && !isReordering) {
+      console.log('[ChatTileGrid] Reordering ended, syncing with props', items);
+      setLocalItems(items);
+    }
+    wasReorderingRef.current = isReordering;
+  }, [isReordering, items]);
+
+  // Also sync when items change while not reordering
+  useEffect(() => {
+    if (!isReordering) {
+      setLocalItems(items);
+    }
+  }, [items, isReordering]);
 
   const handleDragStart = useCallback((e: React.DragEvent, itemId: string) => {
     setDraggedItem(itemId);
@@ -190,19 +202,6 @@ export default function ChatTileGrid({
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-4">
-        {/* Create New Tile */}
-        {showCreate && !isReordering && (
-          <button
-            onClick={onCreateClick}
-            className="aspect-square rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 flex flex-col items-center justify-center gap-2 hover:border-primary/50 hover:bg-primary/10 hover:scale-105 transition-all cursor-pointer group"
-          >
-            <Plus className="h-8 w-8 text-primary/60 group-hover:text-primary transition-colors" />
-            <span className="text-sm font-medium text-primary/60 group-hover:text-primary transition-colors">
-              Create
-            </span>
-          </button>
-        )}
-
         {/* Tile Items */}
         {displayItems.map((item) => (
           <TileButton
@@ -225,6 +224,19 @@ export default function ChatTileGrid({
             onTouchEndReorder={handleTouchEndReorder}
           />
         ))}
+
+        {/* Create New Tile - at the end */}
+        {showCreate && !isReordering && (
+          <button
+            onClick={onCreateClick}
+            className="aspect-square rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 flex flex-col items-center justify-center gap-2 hover:border-primary/50 hover:bg-primary/10 hover:scale-105 transition-all cursor-pointer group"
+          >
+            <Plus className="h-8 w-8 text-primary/60 group-hover:text-primary transition-colors" />
+            <span className="text-sm font-medium text-primary/60 group-hover:text-primary transition-colors">
+              Create
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );
