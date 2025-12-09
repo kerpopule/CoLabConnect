@@ -358,27 +358,72 @@ export default function Chat() {
     }
   };
 
-  // Delete any message (admin only)
+  // Delete any topic message (site admin only) - uses server API to bypass RLS
   const handleAdminDeleteMessage = async (messageId: string) => {
     if (!isGeneralTopicAdmin) return;
-    const { error } = await supabase
-      .from("messages")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", messageId);
-    if (error) {
+    try {
+      const response = await fetch(`/api/messages/${messageId}?adminEmail=${encodeURIComponent(user?.email || "")}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        console.error("Error deleting message:", result.error);
+        toast({
+          variant: "destructive",
+          title: "Failed to delete message",
+          description: result.error || "Unknown error",
+        });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["messages", activeTopic] });
+      toast({
+        title: "Message deleted",
+        description: "The message has been removed.",
+      });
+    } catch (error: any) {
       console.error("Error deleting message:", error);
       toast({
         variant: "destructive",
         title: "Failed to delete message",
-        description: error.message,
+        description: "Network error - please try again",
       });
-      return;
     }
-    queryClient.invalidateQueries({ queryKey: ["messages", activeTopic] });
-    toast({
-      title: "Message deleted",
-      description: "The message has been removed.",
-    });
+  };
+
+  // Delete any group message (site admin only) - uses server API to bypass RLS
+  const handleAdminDeleteGroupMessage = async (messageId: string) => {
+    if (!isGeneralTopicAdmin) return;
+    try {
+      const response = await fetch(`/api/group-messages/${messageId}?adminEmail=${encodeURIComponent(user?.email || "")}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        console.error("Error deleting group message:", result.error);
+        toast({
+          variant: "destructive",
+          title: "Failed to delete message",
+          description: result.error || "Unknown error",
+        });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["group-messages", activeGroup] });
+      toast({
+        title: "Message deleted",
+        description: "The message has been removed.",
+      });
+    } catch (error: any) {
+      console.error("Error deleting group message:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to delete message",
+        description: "Network error - please try again",
+      });
+    }
   };
 
   // Update topic (admin only)
@@ -3347,6 +3392,10 @@ export default function Chat() {
                     // Check if this is a general topic (not private chat, not group chat)
                     const isGeneralTopic = !isPrivateChat && !isGroupChat && activeTab === "general";
 
+                    // Site admin can delete any message in topics or groups (but not DMs)
+                    const canSiteAdminDelete = isGeneralTopicAdmin && !isOwn && !isPrivateChat;
+                    const siteAdminDeleteHandler = isGroupChat ? handleAdminDeleteGroupMessage : handleAdminDeleteMessage;
+
                     return (
                       <MessageWrapper
                         key={msg.id}
@@ -3366,8 +3415,8 @@ export default function Chat() {
                         isGroupChat={isGroupChat}
                         isAdmin={isCurrentUserGroupAdmin}
                         onKick={handleKickMember}
-                        isTopicAdmin={isGeneralTopic && isGeneralTopicAdmin && !isOwn}
-                        onTopicAdminDelete={isGeneralTopic && isGeneralTopicAdmin ? handleAdminDeleteMessage : undefined}
+                        isTopicAdmin={canSiteAdminDelete}
+                        onTopicAdminDelete={canSiteAdminDelete ? siteAdminDeleteHandler : undefined}
                         onTopicAdminKick={isGeneralTopic && isGeneralTopicAdmin ? (userId: string, userName: string) => setShowKickConfirm({ userId, userName }) : undefined}
                       >
                         <div className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}>

@@ -524,6 +524,73 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // Admin Message Management Endpoints
+  // ============================================
+
+  // Site admin constant
+  const SITE_ADMIN_EMAIL = "steve.darlow@gmail.com";
+
+  // Admin delete message in topics (soft delete)
+  app.delete("/api/messages/:messageId", async (req, res) => {
+    try {
+      const { messageId } = req.params;
+      const adminEmail = req.query.adminEmail as string;
+
+      log(`[Admin Delete Message] Request for message: ${messageId} by: ${adminEmail}`);
+
+      if (!adminEmail || adminEmail.toLowerCase() !== SITE_ADMIN_EMAIL.toLowerCase()) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const { error } = await supabase
+        .from("messages")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", messageId);
+
+      if (error) {
+        log(`[Admin Delete Message] Error: ${error.message}`);
+        return res.status(500).json({ error: "Failed to delete message" });
+      }
+
+      log(`[Admin Delete Message] Successfully deleted message: ${messageId}`);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`[Admin Delete Message] Error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin delete group message (soft delete) - site admin can delete any group message
+  app.delete("/api/group-messages/:messageId", async (req, res) => {
+    try {
+      const { messageId } = req.params;
+      const adminEmail = req.query.adminEmail as string;
+
+      log(`[Admin Delete Group Message] Request for message: ${messageId} by: ${adminEmail}`);
+
+      if (!adminEmail || adminEmail.toLowerCase() !== SITE_ADMIN_EMAIL.toLowerCase()) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const { error } = await supabase
+        .from("group_messages")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", messageId);
+
+      if (error) {
+        log(`[Admin Delete Group Message] Error: ${error.message}`);
+        return res.status(500).json({ error: "Failed to delete group message" });
+      }
+
+      log(`[Admin Delete Group Message] Successfully deleted message: ${messageId}`);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`[Admin Delete Group Message] Error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Check if following a topic
   app.get("/api/topics/:topicId/following", async (req, res) => {
     try {
