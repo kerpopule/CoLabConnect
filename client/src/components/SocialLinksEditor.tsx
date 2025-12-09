@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -53,6 +53,9 @@ interface SocialLinksEditorProps {
 export function SocialLinksEditor({ links, onChange, disabled }: SocialLinksEditorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const touchStartY = useRef<number>(0);
+  const touchCurrentIndex = useRef<number | null>(null);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const handleAddLink = (type: SocialPlatformType) => {
     const newLink: SocialLink = {
@@ -116,6 +119,57 @@ export function SocialLinksEditor({ links, onChange, disabled }: SocialLinksEdit
     setDraggedIndex(null);
   };
 
+  // Touch event handlers for mobile drag and drop
+  const handleTouchStart = (e: React.TouchEvent, index: number) => {
+    if (disabled) return;
+    touchStartY.current = e.touches[0].clientY;
+    touchCurrentIndex.current = index;
+    setDraggedIndex(index);
+
+    // Vibrate for haptic feedback
+    if (navigator.vibrate) {
+      navigator.vibrate(50);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchCurrentIndex.current === null || disabled) return;
+
+    const touchY = e.touches[0].clientY;
+
+    // Find which item we're over based on touch position
+    for (let i = 0; i < itemRefs.current.length; i++) {
+      const ref = itemRefs.current[i];
+      if (ref) {
+        const rect = ref.getBoundingClientRect();
+        if (touchY >= rect.top && touchY <= rect.bottom && i !== touchCurrentIndex.current) {
+          // Reorder items
+          const newLinks = [...links];
+          const draggedItem = newLinks[touchCurrentIndex.current];
+          newLinks.splice(touchCurrentIndex.current, 1);
+          newLinks.splice(i, 0, draggedItem);
+
+          // Update order values
+          const reordered = newLinks.map((link, idx) => ({ ...link, order: idx }));
+          onChange(reordered);
+          touchCurrentIndex.current = i;
+          setDraggedIndex(i);
+
+          // Small vibration on reorder
+          if (navigator.vibrate) {
+            navigator.vibrate(30);
+          }
+          break;
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchCurrentIndex.current = null;
+    setDraggedIndex(null);
+  };
+
   // Get platforms that haven't been added yet (except website which can have multiple)
   const availablePlatforms = Object.entries(SOCIAL_PLATFORMS).filter(
     ([type]) =>
@@ -139,16 +193,20 @@ export function SocialLinksEditor({ links, onChange, disabled }: SocialLinksEdit
           return (
             <div
               key={link.id}
+              ref={(el) => (itemRefs.current[index] = el)}
               draggable={!disabled}
               onDragStart={() => handleDragStart(index)}
               onDragOver={(e) => handleDragOver(e, index)}
               onDragEnd={handleDragEnd}
-              className={`flex items-center gap-2 ${
-                draggedIndex === index ? "opacity-50" : ""
-              }`}
+              onTouchStart={(e) => handleTouchStart(e, index)}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              className={`flex items-center gap-2 touch-none ${
+                draggedIndex === index ? "opacity-50 scale-105" : ""
+              } transition-transform`}
             >
-              <div className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground">
-                <GripVertical className="h-4 w-4" />
+              <div className="cursor-grab active:cursor-grabbing p-2 text-muted-foreground hover:text-foreground">
+                <GripVertical className="h-5 w-5" />
               </div>
               <div className="relative flex-1">
                 <Icon className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
