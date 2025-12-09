@@ -524,23 +524,30 @@ export default function Chat() {
       }
     }
 
-    // Force fresh data by removing old cache and refetching
-    console.log('[Topic Reorder] Invalidating and refetching topics...');
-    queryClient.removeQueries({ queryKey: ["topics"] });
-    await queryClient.prefetchQuery({
-      queryKey: ["topics"],
-      queryFn: async () => {
-        const { data, error } = await supabase
-          .from("topics")
-          .select("*")
-          .order("display_order", { ascending: true });
-        if (error) throw error;
-        console.log('[Topic Reorder] Fresh data from DB:', data);
-        return data as Topic[];
-      },
-    });
-    const newTopics = queryClient.getQueryData(["topics"]);
-    console.log('[Topic Reorder] New cached data:', newTopics);
+    // Fetch fresh data directly and update the cache
+    console.log('[Topic Reorder] Fetching fresh topics from DB...');
+    const { data: freshTopics, error: fetchError } = await supabase
+      .from("topics")
+      .select("*")
+      .order("display_order", { ascending: true });
+
+    if (fetchError) {
+      console.error('[Topic Reorder] Error fetching topics:', fetchError);
+      toast({
+        variant: "destructive",
+        title: "Error saving order",
+        description: fetchError.message,
+      });
+      setIsReorderingTopics(false);
+      setPendingTopicOrder([]);
+      return;
+    }
+
+    console.log('[Topic Reorder] Fresh topics:', freshTopics);
+
+    // Update React Query cache with fresh data - this triggers re-render
+    queryClient.setQueryData(["topics"], freshTopics);
+
     toast({
       title: "Topic order saved",
       description: "All users will now see topics in this order.",
