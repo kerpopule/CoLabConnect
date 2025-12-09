@@ -16,6 +16,7 @@ import { MessageContent } from "@/components/LinkPreview";
 import { EmojiReactions, AddReactionButton } from "@/components/EmojiReactions";
 import { ChatImageUpload, ChatImage, ChatFile, isImageUrl, isFileUrl, compressImage } from "@/components/ChatImageUpload";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import ChatTileGrid from "@/components/ChatTileGrid";
 import GroupCreateModal from "@/components/GroupCreateModal";
 import ConnectionsList from "@/components/ConnectionsList";
@@ -58,6 +59,7 @@ export default function Chat() {
   const dmUserId = searchParams.get("dm");
   const groupIdFromUrl = searchParams.get("group");
   const tabFromUrl = searchParams.get("tab") as ActiveTab | null;
+  const isMobile = useIsMobile();
 
   // Get cached chat state from sessionStorage (persists during session, clears on app close)
   const getCachedChatState = () => {
@@ -751,14 +753,27 @@ export default function Chat() {
 
   // Handle keyboard shortcuts in textarea
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Submit on Ctrl+Enter or Cmd+Enter, not on plain Enter
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      if (input.trim() || pendingImages.length > 0) {
-        handleSend(e as unknown as React.FormEvent);
+    if (e.key === 'Enter') {
+      if (isMobile) {
+        // Mobile: Enter adds new line (default), Ctrl/Cmd+Enter sends
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          if (input.trim() || pendingImages.length > 0) {
+            handleSend(e as unknown as React.FormEvent);
+          }
+        }
+      } else {
+        // Desktop: Enter sends, Shift+Enter adds new line
+        if (e.shiftKey) {
+          // Shift+Enter adds new line (default behavior)
+        } else {
+          e.preventDefault();
+          if (input.trim() || pendingImages.length > 0) {
+            handleSend(e as unknown as React.FormEvent);
+          }
+        }
       }
     }
-    // Plain Enter adds a new line (default behavior)
   };
 
   // Add image to pending queue (for preview before sending)
