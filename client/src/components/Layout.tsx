@@ -537,9 +537,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
-      <main className={`flex-1 p-4 md:py-8 md:pr-8 max-w-5xl w-full animate-in fade-in duration-500 transition-all duration-300 ${sidebarCollapsed ? 'md:pl-28' : 'md:pl-72'} ${isChatPage ? "overflow-hidden flex flex-col" : ""}`}>
-        {children}
-      </main>
+      {/* Main content area - offset by sidebar width, then center content within remaining space */}
+      <div className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'}`}>
+        <main className={`p-4 md:p-8 max-w-5xl mx-auto w-full animate-in fade-in duration-500 ${isChatPage ? "overflow-hidden flex flex-col h-full" : ""}`}>
+          {children}
+        </main>
+      </div>
 
       {/* PWA Install Prompt - shows on first login and weekly until installed */}
       <PWAInstallPrompt isLoggedIn={!!user} />
