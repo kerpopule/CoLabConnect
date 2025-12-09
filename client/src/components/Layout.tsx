@@ -20,7 +20,12 @@ import { saveLastRoute } from "@/pages/Home";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
-  const [isDark, setIsDark] = useState(false);
+  // Initialize from localStorage, then DOM state, then default to false
+  const [isDark, setIsDark] = useState(() => {
+    const stored = localStorage.getItem("colab_theme");
+    if (stored) return stored === "dark";
+    return document.documentElement.classList.contains("dark");
+  });
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const { user, profile, signOut, loading } = useAuth();
   const { toast } = useToast();
@@ -111,10 +116,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [user, queryClient]);
 
   useEffect(() => {
-    // Check system preference initially
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    // Check localStorage first, then system preference
+    const stored = localStorage.getItem("colab_theme");
+    if (stored) {
+      const shouldBeDark = stored === "dark";
+      setIsDark(shouldBeDark);
+      if (shouldBeDark) {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       setIsDark(true);
       document.documentElement.classList.add("dark");
+    }
+
+    // Update meta theme-color immediately on mount
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      const currentIsDark = document.documentElement.classList.contains("dark");
+      metaThemeColor.setAttribute("content", currentIsDark ? "#0f172a" : "#f8fafc");
     }
   }, []);
 
@@ -244,6 +265,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const toggleTheme = () => {
     const newDark = !isDark;
     setIsDark(newDark);
+    localStorage.setItem("colab_theme", newDark ? "dark" : "light");
     if (newDark) {
       document.documentElement.classList.add("dark");
     } else {
