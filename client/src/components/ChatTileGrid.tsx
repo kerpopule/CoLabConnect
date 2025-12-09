@@ -1,4 +1,5 @@
 import { Plus } from "lucide-react";
+import { useRef, useCallback } from "react";
 
 interface TileItem {
   id: string;
@@ -7,6 +8,7 @@ interface TileItem {
   unreadCount?: number;
   isPending?: boolean;
   isCreate?: boolean;
+  isAdmin?: boolean;
 }
 
 interface ChatTileGridProps {
@@ -14,6 +16,7 @@ interface ChatTileGridProps {
   onSelect: (id: string) => void;
   onAccept?: (id: string) => void;
   onDecline?: (id: string) => void;
+  onLongPress?: (id: string) => void;
   showCreate?: boolean;
   onCreateClick?: () => void;
 }
@@ -23,6 +26,7 @@ export default function ChatTileGrid({
   onSelect,
   onAccept,
   onDecline,
+  onLongPress,
   showCreate,
   onCreateClick,
 }: ChatTileGridProps) {
@@ -43,66 +47,134 @@ export default function ChatTileGrid({
 
       {/* Tile Items */}
       {items.map((item) => (
-        <div key={item.id} className="relative">
-          {/* Pending Invite Tile */}
-          {item.isPending ? (
-            <div className="aspect-square rounded-xl border border-primary/30 bg-primary/5 flex flex-col items-center justify-center p-3 relative overflow-hidden">
-              {/* Emoji Display */}
-              <div className="text-2xl sm:text-3xl mb-1">
-                {Array.isArray(item.emoji)
-                  ? item.emoji.join("")
-                  : item.emoji || "💬"}
-              </div>
-              <span className="text-xs sm:text-sm font-medium text-center line-clamp-1 mb-2 text-muted-foreground">
-                {item.name}
-              </span>
-              {/* Accept/Decline Buttons */}
-              <div className="flex gap-2 w-full">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAccept?.(item.id);
-                  }}
-                  className="flex-1 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
-                >
-                  Accept
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDecline?.(item.id);
-                  }}
-                  className="flex-1 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-xs font-medium hover:bg-red-500/20 transition-colors"
-                >
-                  Decline
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* Regular Tile */
-            <button
-              onClick={() => onSelect(item.id)}
-              className="w-full aspect-square rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-2 hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all cursor-pointer relative"
-            >
-              {/* Emoji Display */}
-              <div className="text-3xl sm:text-4xl">
-                {Array.isArray(item.emoji)
-                  ? item.emoji.join("")
-                  : item.emoji || "💬"}
-              </div>
-              <span className="text-sm font-medium text-center px-2 line-clamp-2">
-                {item.name}
-              </span>
-              {/* Unread Badge - inside tile, bottom right */}
-              {typeof item.unreadCount === "number" && item.unreadCount > 0 && (
-                <div className="absolute bottom-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
-                  {item.unreadCount > 99 ? "99+" : item.unreadCount}
-                </div>
-              )}
-            </button>
-          )}
-        </div>
+        <TileButton
+          key={item.id}
+          item={item}
+          onSelect={onSelect}
+          onAccept={onAccept}
+          onDecline={onDecline}
+          onLongPress={onLongPress}
+        />
       ))}
+    </div>
+  );
+}
+
+interface TileButtonProps {
+  item: TileItem;
+  onSelect: (id: string) => void;
+  onAccept?: (id: string) => void;
+  onDecline?: (id: string) => void;
+  onLongPress?: (id: string) => void;
+}
+
+function TileButton({ item, onSelect, onAccept, onDecline, onLongPress }: TileButtonProps) {
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPress = useRef(false);
+
+  const handleTouchStart = useCallback(() => {
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      if (onLongPress) {
+        // Vibrate if available (mobile)
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+        onLongPress(item.id);
+      }
+    }, 500); // 500ms for long press
+  }, [item.id, onLongPress]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const handleClick = useCallback(() => {
+    // Don't trigger click if it was a long press
+    if (isLongPress.current) {
+      isLongPress.current = false;
+      return;
+    }
+    onSelect(item.id);
+  }, [item.id, onSelect]);
+
+  // Context menu for desktop right-click (acts like long press)
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (onLongPress) {
+      e.preventDefault();
+      onLongPress(item.id);
+    }
+  }, [item.id, onLongPress]);
+
+  if (item.isPending) {
+    return (
+      <div className="relative">
+        <div className="aspect-square rounded-xl border border-primary/30 bg-primary/5 flex flex-col items-center justify-center p-3 relative overflow-hidden">
+          {/* Emoji Display */}
+          <div className="text-2xl sm:text-3xl mb-1">
+            {Array.isArray(item.emoji)
+              ? item.emoji.join("")
+              : item.emoji || "💬"}
+          </div>
+          <span className="text-xs sm:text-sm font-medium text-center line-clamp-1 mb-2 text-muted-foreground">
+            {item.name}
+          </span>
+          {/* Accept/Decline Buttons */}
+          <div className="flex gap-2 w-full">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAccept?.(item.id);
+              }}
+              className="flex-1 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+            >
+              Accept
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDecline?.(item.id);
+              }}
+              className="flex-1 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-xs font-medium hover:bg-red-500/20 transition-colors"
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleClick}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onContextMenu={handleContextMenu}
+        className="w-full aspect-square rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-2 hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all cursor-pointer relative select-none"
+      >
+        {/* Emoji Display */}
+        <div className="text-3xl sm:text-4xl">
+          {Array.isArray(item.emoji)
+            ? item.emoji.join("")
+            : item.emoji || "💬"}
+        </div>
+        <span className="text-sm font-medium text-center px-2 line-clamp-2">
+          {item.name}
+        </span>
+        {/* Unread Badge - inside tile, bottom right */}
+        {typeof item.unreadCount === "number" && item.unreadCount > 0 && (
+          <div className="absolute bottom-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+            {item.unreadCount > 99 ? "99+" : item.unreadCount}
+          </div>
+        )}
+      </button>
     </div>
   );
 }

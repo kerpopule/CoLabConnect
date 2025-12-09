@@ -92,6 +92,9 @@ export default function Chat() {
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showGroupSettings, setShowGroupSettings] = useState(false);
   const [showInviteMembers, setShowInviteMembers] = useState(false);
+  const [inviteModalTab, setInviteModalTab] = useState<"connections" | "members">("connections");
+  const [showGroupActions, setShowGroupActions] = useState(false);
+  const [showAdminTransfer, setShowAdminTransfer] = useState(false);
 
   const { user, profile: currentUserProfile, loading: authLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -398,6 +401,7 @@ export default function Chat() {
             ...group,
             membership_status: membership.status,
             membership_role: membership.role,
+            notifications_enabled: membership.notifications_enabled ?? true,
             unread_count: unreadCount,
             latest_message_at: latestMsg?.created_at || group.created_at,
           };
@@ -684,6 +688,75 @@ export default function Chat() {
       supabase.removeChannel(channel);
     };
   }, [user, activeGroup, viewMode, activeTab, queryClient]);
+
+  // Real-time subscription for group membership changes (invites, etc.)
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`group-members:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_chat_members",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          // Invalidate group chats query when membership changes
+          queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_chat_members",
+        },
+        (payload) => {
+          // If someone was added to a group the user is in, refresh
+          const newMember = payload.new as any;
+          if (newMember.invited_by === user.id || newMember.user_id === user.id) {
+            queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient]);
+
+  // Real-time subscription for new group messages (global - for unread counts)
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`all-group-messages:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_messages",
+        },
+        (payload) => {
+          const newMsg = payload.new as GroupMessage;
+          // Don't update for own messages
+          if (newMsg.user_id === user.id) return;
+          // Invalidate group chats to update unread counts
+          queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient]);
 
   // Scroll handling
   const checkIfAtBottom = useCallback(() => {
@@ -1364,6 +1437,186 @@ export default function Chat() {
     });
   };
 
+  // Kick member from group (admin only)
+  const handleKickMember = async (memberId: string, memberName: string) => {
+    if (!user || !activeGroup) return;
+
+    const confirmed = window.confirm(`Remove ${memberName} from this group?`);
+    if (!confirmed) return;
+
+    const { error } = await supabase
+      .from("group_chat_members")
+      .delete()
+      .eq("group_id", activeGroup)
+      .eq("user_id", memberId);
+
+    if (error) {
+      console.error("Error kicking member:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to remove member",
+        description: "Please try again.",
+      });
+      return;
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    toast({
+      title: "Member removed",
+      description: `${memberName} has been removed from the group`,
+    });
+  };
+
+  // Leave group
+  const handleLeaveGroup = async () => {
+    if (!user || !activeGroup || !activeGroupData) return;
+
+    const currentUserMembership = activeGroupData.members?.find(
+      (m: any) => m.user_id === user.id
+    );
+    const isAdmin = currentUserMembership?.role === "admin";
+    const acceptedMembers = activeGroupData.members?.filter(
+      (m: any) => m.status === "accepted" && m.user_id !== user.id
+    ) || [];
+
+    // If admin and there are other members, show admin transfer UI
+    if (isAdmin && acceptedMembers.length > 0) {
+      setShowGroupActions(false);
+      setShowAdminTransfer(true);
+      return;
+    }
+
+    // If last member or not admin, just leave
+    const { error } = await supabase
+      .from("group_chat_members")
+      .delete()
+      .eq("group_id", activeGroup)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Error leaving group:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to leave group",
+        description: "Please try again.",
+      });
+      return;
+    }
+
+    // If last member, delete the group
+    if (acceptedMembers.length === 0) {
+      await supabase.from("group_chats").delete().eq("id", activeGroup);
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    setActiveGroup(null);
+    setViewMode("list");
+    setShowGroupActions(false);
+    toast({ title: "Left group" });
+  };
+
+  // Transfer admin and leave
+  const handleTransferAdminAndLeave = async (newAdminId: string) => {
+    if (!user || !activeGroup || !activeGroupData) return;
+
+    // Make new admin
+    const { error: adminError } = await supabase
+      .from("group_chat_members")
+      .update({ role: "admin" })
+      .eq("group_id", activeGroup)
+      .eq("user_id", newAdminId);
+
+    if (adminError) {
+      console.error("Error transferring admin:", adminError);
+      toast({
+        variant: "destructive",
+        title: "Failed to transfer admin",
+        description: "Please try again.",
+      });
+      return;
+    }
+
+    // Notify new admin
+    const newAdmin = activeGroupData.members?.find((m: any) => m.user_id === newAdminId);
+    fetch("/api/notify/group-invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        receiverId: newAdminId,
+        senderId: user.id,
+        senderName: "System",
+        groupName: `You are now admin of ${activeGroupData?.name || activeGroupData?.emojis?.join("")}`,
+        groupId: activeGroup,
+      }),
+    }).catch(console.error);
+
+    // Now leave
+    const { error: leaveError } = await supabase
+      .from("group_chat_members")
+      .delete()
+      .eq("group_id", activeGroup)
+      .eq("user_id", user.id);
+
+    if (leaveError) {
+      console.error("Error leaving group:", leaveError);
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    setActiveGroup(null);
+    setViewMode("list");
+    setShowAdminTransfer(false);
+    toast({ title: "Admin transferred and left group" });
+  };
+
+  // Delete group (admin only)
+  const handleDeleteGroup = async () => {
+    if (!user || !activeGroup || !activeGroupData) return;
+
+    const confirmed = window.confirm("Delete this group? This cannot be undone.");
+    if (!confirmed) return;
+
+    // Notify all members
+    const members = activeGroupData.members?.filter(
+      (m: any) => m.status === "accepted" && m.user_id !== user.id
+    ) || [];
+
+    for (const member of members) {
+      fetch("/api/notify/group-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          receiverId: member.user_id,
+          senderId: user.id,
+          senderName: "System",
+          groupName: `${activeGroupData?.name || activeGroupData?.emojis?.join("")} has been deleted`,
+          groupId: activeGroup,
+        }),
+      }).catch(console.error);
+    }
+
+    // Delete the group (cascades to members and messages)
+    const { error } = await supabase
+      .from("group_chats")
+      .delete()
+      .eq("id", activeGroup);
+
+    if (error) {
+      console.error("Error deleting group:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to delete group",
+        description: "Please try again.",
+      });
+      return;
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    setActiveGroup(null);
+    setViewMode("list");
+    setShowGroupActions(false);
+    toast({ title: "Group deleted" });
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -1547,6 +1800,12 @@ export default function Chat() {
     markGroupAsRead(groupId);
   };
 
+  // Handle long press on group tile (shows actions modal)
+  const handleGroupLongPress = (groupId: string) => {
+    setActiveGroup(groupId);
+    setShowGroupActions(true);
+  };
+
   const currentTopic = displayTopics.find((t) => t.id === activeTopic);
   const isPrivateChat = activeTab === "dms" && !!activeDm && viewMode === "chat";
   const isGroupChat = activeTab === "groups" && !!activeGroup && viewMode === "chat";
@@ -1592,6 +1851,43 @@ export default function Chat() {
   const invitableConnections = availableConnections.filter(
     p => !existingMemberIds.includes(p.id)
   );
+
+  // Check if current user is admin of the active group
+  const isCurrentUserGroupAdmin = isGroupChat && activeGroupData?.membership_role === "admin";
+
+  // Check if group notifications are enabled for current user
+  const isGroupNotificationsEnabled = isGroupChat && activeGroupData?.notifications_enabled;
+
+  // Toggle group notifications
+  const handleToggleGroupNotifications = async () => {
+    if (!user || !activeGroup) return;
+
+    const newValue = !activeGroupData?.notifications_enabled;
+
+    const { error } = await supabase
+      .from("group_chat_members")
+      .update({ notifications_enabled: newValue })
+      .eq("group_id", activeGroup)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Error toggling notifications:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update notification settings",
+        description: "Please try again.",
+      });
+      return;
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    toast({
+      title: newValue ? "Notifications enabled" : "Notifications muted",
+      description: newValue
+        ? "You'll receive notifications from this group"
+        : "You won't receive notifications from this group",
+    });
+  };
 
   // Require login to access chat
   if (!user && !authLoading) {
@@ -1810,8 +2106,10 @@ export default function Chat() {
                     emoji: g.emojis,
                     name: g.name || getGroupDisplayName(g),
                     unreadCount: g.unread_count,
+                    isAdmin: g.membership_role === "admin",
                   }))}
                 onSelect={handleSelectGroup}
+                onLongPress={handleGroupLongPress}
                 showCreate
                 onCreateClick={() => setShowCreateGroup(true)}
                 onAccept={handleAcceptGroupInvite}
@@ -2045,6 +2343,9 @@ export default function Chat() {
                         onUnmute={handleUnmuteUser}
                         isMuted={isMuted}
                         isPrivateChat={isPrivateChat}
+                        isGroupChat={isGroupChat}
+                        isAdmin={isCurrentUserGroupAdmin}
+                        onKick={handleKickMember}
                       >
                         <div className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}>
                           <Avatar className="w-8 h-8 shrink-0">
@@ -2165,34 +2466,52 @@ export default function Chat() {
                     variant="ghost"
                     size="icon"
                     className={`shrink-0 rounded-full transition-colors ${
-                      (isPrivateChat ? hasNotificationsEnabled : isFollowingTopic)
-                        ? "text-primary"
-                        : "text-muted-foreground"
+                      isGroupChat
+                        ? (isGroupNotificationsEnabled ? "text-primary" : "text-muted-foreground")
+                        : isPrivateChat
+                        ? (hasNotificationsEnabled ? "text-primary" : "text-muted-foreground")
+                        : (isFollowingTopic ? "text-primary" : "text-muted-foreground")
                     }`}
                     onClick={() => {
-                      if (!hasNotificationsEnabled) {
-                        if (isPrivateChat) {
-                          setShowDmPrompt(true);
-                        } else {
+                      if (isGroupChat) {
+                        // For group chats, toggle group-specific notifications
+                        if (!hasNotificationsEnabled) {
+                          // First need to enable push notifications globally
                           setShowTopicPrompt(true);
+                        } else {
+                          handleToggleGroupNotifications();
                         }
-                      } else if (!isPrivateChat && !isGroupChat) {
-                        toggleFollow();
+                      } else if (isPrivateChat) {
+                        if (!hasNotificationsEnabled) {
+                          setShowDmPrompt(true);
+                        }
+                        // DMs don't have individual toggles, just global push
+                      } else {
+                        // Topic notifications
+                        if (!hasNotificationsEnabled) {
+                          setShowTopicPrompt(true);
+                        } else {
+                          toggleFollow();
+                        }
                       }
                     }}
                     disabled={followLoading}
                     title={
-                      isPrivateChat || isGroupChat
-                        ? hasNotificationsEnabled ? "Notifications enabled" : "Enable notifications"
-                        : isFollowingTopic ? "Disable notifications for this channel" : "Enable notifications for this channel"
+                      isGroupChat
+                        ? (isGroupNotificationsEnabled ? "Mute group notifications" : "Enable group notifications")
+                        : isPrivateChat
+                        ? (hasNotificationsEnabled ? "Notifications enabled" : "Enable notifications")
+                        : (isFollowingTopic ? "Disable notifications for this channel" : "Enable notifications for this channel")
                     }
                   >
                     {followLoading ? (
                       <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (isPrivateChat || isGroupChat ? hasNotificationsEnabled : isFollowingTopic) ? (
-                      <Bell className="h-5 w-5" />
+                    ) : isGroupChat ? (
+                      isGroupNotificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />
+                    ) : isPrivateChat ? (
+                      hasNotificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />
                     ) : (
-                      <BellOff className="h-5 w-5" />
+                      isFollowingTopic ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />
                     )}
                   </Button>
                 )}
@@ -2258,53 +2577,233 @@ export default function Chat() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowInviteMembers(false)}
+            onClick={() => { setShowInviteMembers(false); setInviteModalTab("connections"); }}
           />
           <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">Invite Members</h2>
+              <h2 className="text-lg font-semibold">Group Members</h2>
               <button
-                onClick={() => setShowInviteMembers(false)}
+                onClick={() => { setShowInviteMembers(false); setInviteModalTab("connections"); }}
                 className="p-2 rounded-full hover:bg-muted transition-colors"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
             </div>
+            {/* Tab Switcher */}
+            <div className="flex border-b">
+              <button
+                onClick={() => setInviteModalTab("connections")}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  inviteModalTab === "connections"
+                    ? "text-primary border-b-2 border-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Invite Connections
+              </button>
+              <button
+                onClick={() => setInviteModalTab("members")}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  inviteModalTab === "members"
+                    ? "text-primary border-b-2 border-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Members ({activeGroupData?.members?.filter((m: any) => m.status === "accepted").length || 0})
+              </button>
+            </div>
             <div className="flex-1 overflow-y-auto p-4">
-              {invitableConnections.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>All your connections are already in this group</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {invitableConnections.map((connection) => (
-                    <button
-                      key={connection.id}
-                      onClick={() => handleInviteToGroup([connection.id])}
-                      className="w-full flex items-center justify-between p-3 rounded-xl border border-border hover:border-primary/30 transition-all"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage
-                            src={connection.avatar_url || undefined}
-                            alt={connection.name}
-                          />
-                          <AvatarFallback className="bg-primary/10 text-primary">
-                            {getInitials(connection.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="text-left">
-                          <p className="font-medium">{connection.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {connection.role || "Member"}
-                          </p>
+              {inviteModalTab === "connections" ? (
+                // Connections tab - invite new members
+                invitableConnections.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>All your connections are already in this group</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {invitableConnections.map((connection) => (
+                      <button
+                        key={connection.id}
+                        onClick={() => handleInviteToGroup([connection.id])}
+                        className="w-full flex items-center justify-between p-3 rounded-xl border border-border hover:border-primary/30 transition-all"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage
+                              src={connection.avatar_url || undefined}
+                              alt={connection.name}
+                            />
+                            <AvatarFallback className="bg-primary/10 text-primary">
+                              {getInitials(connection.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="text-left">
+                            <p className="font-medium">{connection.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {connection.role || "Member"}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                      <Plus className="h-5 w-5 text-primary" />
-                    </button>
-                  ))}
+                        <Plus className="h-5 w-5 text-primary" />
+                      </button>
+                    ))}
+                  </div>
+                )
+              ) : (
+                // Members tab - show current members
+                <div className="space-y-2">
+                  {activeGroupData?.members
+                    ?.filter((m: any) => m.status === "accepted")
+                    .map((member: any) => {
+                      const isAdmin = member.role === "admin";
+                      const isCurrentUser = member.user_id === user?.id;
+                      const currentUserIsAdmin = activeGroupData?.members?.find(
+                        (m: any) => m.user_id === user?.id && m.role === "admin"
+                      );
+                      return (
+                        <div
+                          key={member.id}
+                          className="w-full flex items-center justify-between p-3 rounded-xl border border-border"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage
+                                src={member.profiles?.avatar_url || undefined}
+                                alt={member.profiles?.name}
+                              />
+                              <AvatarFallback className="bg-primary/10 text-primary">
+                                {getInitials(member.profiles?.name || "?")}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="text-left">
+                              <p className="font-medium">
+                                {member.profiles?.name}
+                                {isCurrentUser && " (You)"}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {isAdmin ? "Admin" : "Member"}
+                              </p>
+                            </div>
+                          </div>
+                          {/* Kick button for admins (can't kick self or other admins) */}
+                          {currentUserIsAdmin && !isCurrentUser && !isAdmin && (
+                            <button
+                              onClick={() => handleKickMember(member.user_id, member.profiles?.name)}
+                              className="p-2 rounded-full hover:bg-red-500/10 text-red-500 transition-colors"
+                              title="Remove from group"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group Actions Modal (Delete/Leave) */}
+      {showGroupActions && activeGroupData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowGroupActions(false)}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="p-4 text-center border-b">
+              <div className="text-3xl mb-2">
+                {activeGroupData.emojis?.join("") || "💬"}
+              </div>
+              <h2 className="text-lg font-semibold">
+                {activeGroupData.name || "Group"}
+              </h2>
+            </div>
+            <div className="p-4 space-y-2">
+              <button
+                onClick={handleLeaveGroup}
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
+              >
+                <ArrowLeft className="h-5 w-5" />
+                Leave Group
+              </button>
+              {activeGroupData.membership_role === "admin" && (
+                <button
+                  onClick={handleDeleteGroup}
+                  className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 transition-colors text-red-500"
+                >
+                  <Trash2 className="h-5 w-5" />
+                  Delete Group
+                </button>
+              )}
+            </div>
+            <div className="p-4 border-t">
+              <button
+                onClick={() => setShowGroupActions(false)}
+                className="w-full p-3 rounded-xl border border-border hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Transfer Modal */}
+      {showAdminTransfer && activeGroupData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowAdminTransfer(false)}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b">
+              <h2 className="text-lg font-semibold">Transfer Admin Role</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Select a member to make admin before leaving
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {activeGroupData.members
+                ?.filter((m: any) => m.status === "accepted" && m.user_id !== user?.id)
+                .map((member: any) => (
+                  <button
+                    key={member.id}
+                    onClick={() => handleTransferAdminAndLeave(member.user_id)}
+                    className="w-full flex items-center justify-between p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-muted/50 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage
+                          src={member.profiles?.avatar_url || undefined}
+                          alt={member.profiles?.name}
+                        />
+                        <AvatarFallback className="bg-primary/10 text-primary">
+                          {getInitials(member.profiles?.name || "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="text-left">
+                        <p className="font-medium">{member.profiles?.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {member.role === "admin" ? "Admin" : "Member"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-primary text-sm font-medium">
+                      Make Admin
+                    </div>
+                  </button>
+                ))}
+            </div>
+            <div className="p-4 border-t">
+              <button
+                onClick={() => setShowAdminTransfer(false)}
+                className="w-full p-3 rounded-xl border border-border hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

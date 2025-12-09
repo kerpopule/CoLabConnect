@@ -332,10 +332,10 @@ export async function notifyGroupMessage(
   senderName: string,
   messagePreview: string
 ): Promise<void> {
-  // Get all accepted members of this group (except the sender)
+  // Get all accepted members of this group who have notifications enabled (except the sender)
   const { data: members, error } = await supabase
     .from("group_chat_members")
-    .select("user_id")
+    .select("user_id, notifications_enabled")
     .eq("group_id", groupId)
     .eq("status", "accepted")
     .neq("user_id", senderId);
@@ -344,8 +344,18 @@ export async function notifyGroupMessage(
     return;
   }
 
-  // Send notifications to all members
-  const sendPromises = members.map((member: { user_id: string }) =>
+  // Filter to only members with notifications enabled (default to true if not set)
+  const notifiableMembers = members.filter(
+    (member: { user_id: string; notifications_enabled: boolean | null }) =>
+      member.notifications_enabled !== false
+  );
+
+  if (notifiableMembers.length === 0) {
+    return;
+  }
+
+  // Send notifications to members with notifications enabled
+  const sendPromises = notifiableMembers.map((member: { user_id: string }) =>
     sendPushNotification(member.user_id, {
       title: `New message in ${groupName}`,
       body: `${senderName}: ${messagePreview.length > 80 ? messagePreview.slice(0, 77) + "..." : messagePreview}`,

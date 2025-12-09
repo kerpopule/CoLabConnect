@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Edit2, Trash2, X, Check, Loader2, Reply, VolumeX, Volume2 } from "lucide-react";
+import { Edit2, Trash2, X, Check, Loader2, Reply, VolumeX, Volume2, UserMinus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -236,6 +236,10 @@ interface MessageWrapperProps {
   onUnmute?: (userId: string) => Promise<void>;
   isMuted?: boolean;
   isPrivateChat?: boolean;
+  // Admin kick functionality for group chats
+  isGroupChat?: boolean;
+  isAdmin?: boolean;
+  onKick?: (userId: string, userName: string) => Promise<void>;
 }
 
 export function MessageWrapper({
@@ -253,6 +257,9 @@ export function MessageWrapper({
   onUnmute,
   isMuted = false,
   isPrivateChat = false,
+  isGroupChat = false,
+  isAdmin = false,
+  onKick,
 }: MessageWrapperProps) {
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -353,7 +360,7 @@ export function MessageWrapper({
               </Button>
             </>
           ) : (
-            // Others' message actions: Reply & Mute/Unmute
+            // Others' message actions: Reply & Mute/Unmute & Kick (admin only)
             <>
               {onReply && senderName && (
                 <Button
@@ -398,6 +405,25 @@ export function MessageWrapper({
                       Mute
                     </>
                   )}
+                </Button>
+              )}
+              {/* Kick button for group chat admins */}
+              {isGroupChat && isAdmin && senderId && senderName && onKick && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={async () => {
+                    try {
+                      await onKick(senderId, senderName);
+                    } catch (error) {
+                      console.error("Failed to kick:", error);
+                    }
+                    setShowActions(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <UserMinus className="h-4 w-4" />
+                  Kick
                 </Button>
               )}
             </>
