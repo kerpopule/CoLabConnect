@@ -454,14 +454,20 @@ export default function Chat() {
         return [];
       }
 
-      console.log("[group-chats] memberData:", memberData);
-
       // Transform data and calculate unread counts
       const groups = await Promise.all(
         (memberData || []).map(async (membership: any) => {
           const group = membership.group;
           if (!group) return null;
-          console.log("[group-chats] group:", group.id, "group.members:", group.members?.length, group.members);
+
+          // Fetch all members for this group (nested query may be limited by RLS)
+          const { data: groupMembers } = await supabase
+            .from("group_chat_members")
+            .select(`
+              *,
+              profiles:profiles!group_chat_members_user_id_fkey(*)
+            `)
+            .eq("group_id", group.id);
 
           // Get latest message timestamp (use maybeSingle to avoid 406 error when no messages)
           const { data: latestMsgArray } = await supabase
@@ -472,7 +478,7 @@ export default function Chat() {
             .limit(1);
           const latestMsg = latestMsgArray?.[0] || null;
 
-          // Count unread messages
+          // Count unread messages (excluding messages sent by the current user)
           let unreadCount = 0;
           if (membership.last_read_at) {
             const { count } = await supabase
@@ -480,20 +486,23 @@ export default function Chat() {
               .select("*", { count: "exact", head: true })
               .eq("group_id", group.id)
               .gt("created_at", membership.last_read_at)
+              .neq("user_id", user.id) // Exclude own messages
               .is("deleted_at", null);
             unreadCount = count || 0;
           } else if (membership.status === "accepted") {
-            // If never read, count all messages
+            // If never read, count all messages except own
             const { count } = await supabase
               .from("group_messages")
               .select("*", { count: "exact", head: true })
               .eq("group_id", group.id)
+              .neq("user_id", user.id) // Exclude own messages
               .is("deleted_at", null);
             unreadCount = count || 0;
           }
 
           return {
             ...group,
+            members: groupMembers || [], // Use separately fetched members
             membership_status: membership.status,
             membership_role: membership.role,
             notifications_enabled: membership.notifications_enabled ?? true,
@@ -1793,42 +1802,57 @@ export default function Chat() {
         const sanitizedName = fileData.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
         const fileName = `chat-files/${user.id}/${Date.now()}-${sanitizedName}`;
 
+        console.log("[uploadFile] Uploading:", fileName, "type:", fileData.file.type, "size:", fileData.file.size);
+
         const { error: uploadError } = await supabase.storage
           .from("chat-images")
           .upload(fileName, fileData.file, {
-            contentType: fileData.file.type,
+            contentType: fileData.file.type || "application/octet-stream",
             upsert: false,
           });
 
         if (uploadError) {
+          console.log("[uploadFile] Primary upload error:", uploadError.message);
           // Fallback to avatars bucket
-          if (uploadError.message.includes("not found")) {
-            const fallbackFileName = `chat-file-${user.id}-${Date.now()}.${ext}`;
-            const { error: fallbackError } = await supabase.storage
-              .from("avatars")
-              .upload(fallbackFileName, fileData.file, {
-                contentType: fileData.file.type,
-                upsert: false,
-              });
+          const fallbackFileName = `chat-file-${user.id}-${Date.now()}.${ext}`;
+          console.log("[uploadFile] Trying fallback bucket with:", fallbackFileName);
 
-            if (fallbackError) throw fallbackError;
+          const { error: fallbackError } = await supabase.storage
+            .from("avatars")
+            .upload(fallbackFileName, fileData.file, {
+              contentType: fileData.file.type || "application/octet-stream",
+              upsert: false,
+            });
 
-            const { data: { publicUrl } } = supabase.storage
-              .from("avatars")
-              .getPublicUrl(fallbackFileName);
-
-            return publicUrl;
+          if (fallbackError) {
+            console.error("[uploadFile] Fallback upload error:", fallbackError.message);
+            toast({
+              title: "Upload failed",
+              description: `Could not upload "${fileData.fileName}". ${fallbackError.message}`,
+            });
+            return null;
           }
-          throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(fallbackFileName);
+
+          console.log("[uploadFile] Fallback success:", publicUrl);
+          return publicUrl;
         }
 
         const { data: { publicUrl } } = supabase.storage
           .from("chat-images")
           .getPublicUrl(fileName);
 
+        console.log("[uploadFile] Upload success:", publicUrl);
         return publicUrl;
-      } catch (error) {
-        console.error("File upload error:", error);
+      } catch (error: any) {
+        console.error("[uploadFile] Exception:", error);
+        toast({
+          title: "Upload failed",
+          description: `Could not upload "${fileData.fileName}". Please try again.`,
+        });
         return null;
       }
     };
@@ -1985,14 +2009,12 @@ export default function Chat() {
     localStorage.setItem("colab-ai-messages", JSON.stringify([welcomeMessage]));
   };
 
-  // Get group display name
+  // Get group display name - shows "Admin Steve" for 1 member, "Steve and Derek" for 2, "Steve, Derek + N" for more
   const getGroupDisplayName = (group: any) => {
-    console.log("[getGroupDisplayName] group:", group.id, "name:", group.name, "members:", group.members?.length, group.members);
     if (group.name) return group.name;
 
-    // Get all accepted members (including current user for proper count)
+    // Get all accepted members
     const allMembers = group.members?.filter((m: any) => m.status === "accepted") || [];
-    console.log("[getGroupDisplayName] allMembers:", allMembers.length, allMembers);
     if (allMembers.length === 0) return group.emojis?.join("") || "Group";
 
     // Sort: admin first, then by join date
