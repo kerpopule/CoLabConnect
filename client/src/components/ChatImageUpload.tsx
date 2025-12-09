@@ -17,7 +17,7 @@ interface ChatImageUploadProps {
   multiple?: boolean;
 }
 
-// Max file size: 3MB
+// Max file size: 3MB (for non-image files only)
 const MAX_FILE_SIZE = 3 * 1024 * 1024;
 
 // Check if file is an image based on type OR extension (for iOS compatibility)
@@ -31,30 +31,9 @@ function isImageFile(file: File): boolean {
   return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff'].includes(ext || '');
 }
 
-// Check if file type is allowed
-function isAllowedFile(file: File): boolean {
-  // Images are always allowed
-  if (isImageFile(file)) return true;
-
-  // Check MIME type for documents
-  const allowedMimeTypes = [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/plain",
-    "text/csv",
-  ];
-  if (allowedMimeTypes.includes(file.type)) return true;
-
-  // Fallback: check extension
-  const ext = file.name.toLowerCase().split('.').pop();
-  return ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv'].includes(ext || '');
-}
-
-// File extensions for accept attribute - simplified for iOS compatibility
-const ACCEPT_TYPES = "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv";
+// All file types are now allowed - no restrictions
+// File extensions for accept attribute - accept all files
+const ACCEPT_TYPES = "*/*";
 
 // Compress image before upload - exported for use in Chat.tsx
 export async function compressImage(file: File, maxSize: number = 1200, quality: number = 0.8): Promise<Blob> {
@@ -177,24 +156,13 @@ export function ChatImageUpload({
 
       const isImage = isImageFile(file);
 
-      // Validate file type
-      if (!isAllowedFile(file)) {
-        console.log("[ChatImageUpload] File type not allowed:", file.type);
+      // Images have no size limit (they get compressed)
+      // Non-image files are limited to 3MB
+      if (!isImage && file.size > MAX_FILE_SIZE) {
+        console.log("[ChatImageUpload] Non-image file too large:", file.size);
         toast({
-          variant: "destructive",
-          title: "Unsupported file type",
-          description: `Cannot upload "${file.name}". Please select an image, PDF, Word, Excel, or text file.`,
-        });
-        continue;
-      }
-
-      // Max 3MB for files
-      if (file.size > MAX_FILE_SIZE) {
-        console.log("[ChatImageUpload] File too large:", file.size);
-        toast({
-          variant: "destructive",
           title: "File too large",
-          description: `"${file.name}" is too large. Maximum file size is 3MB.`,
+          description: `"${file.name}" is too large. Maximum file size is 3MB for non-image files.`,
         });
         continue;
       }
@@ -546,12 +514,16 @@ export function isFileUrl(content: string): boolean {
     return true;
   }
 
-  // Check common file extensions
-  const fileExtensions = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".csv"];
+  // Check if it looks like a file URL with an extension (not an image)
+  const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tiff"];
 
   try {
     const url = new URL(content);
-    return fileExtensions.some(ext => url.pathname.toLowerCase().endsWith(ext));
+    const pathname = url.pathname.toLowerCase();
+    // Has a file extension and is not an image
+    const hasExtension = /\.[a-z0-9]+$/i.test(pathname);
+    const isImage = imageExtensions.some(ext => pathname.endsWith(ext));
+    return hasExtension && !isImage;
   } catch {
     return false;
   }

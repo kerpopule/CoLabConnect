@@ -227,8 +227,9 @@ label {
   }
 }
 
-/* Portrait lock for mobile phones only (not tablets) */
-@media screen and (max-width: 480px) and (orientation: landscape) {
+/* Portrait lock for mobile phones only (not tablets) - browser and PWA */
+@media screen and (max-width: 480px) and (orientation: landscape),
+       screen and (max-height: 480px) and (orientation: landscape) {
   html::before {
     content: "Please rotate your device to portrait mode";
     position: fixed;
@@ -236,6 +237,8 @@ label {
     left: 0;
     right: 0;
     bottom: 0;
+    width: 100vw;
+    height: 100vh;
     background: hsl(var(--background));
     color: hsl(var(--foreground));
     display: flex;
@@ -244,7 +247,7 @@ label {
     text-align: center;
     font-size: 1.25rem;
     padding: 2rem;
-    z-index: 99999;
+    z-index: 999999;
   }
 
   html::after {
@@ -254,11 +257,50 @@ label {
     left: 50%;
     transform: translate(-50%, calc(-50% + 3rem));
     font-size: 3rem;
-    z-index: 99999;
+    z-index: 999999;
   }
 
   body {
     overflow: hidden !important;
+  }
+
+  /* Hide everything else in landscape on mobile */
+  #root {
+    display: none !important;
+  }
+}
+
+/* Additional PWA-specific portrait lock for iOS standalone mode */
+@media screen and (display-mode: standalone) and (max-width: 480px) and (orientation: landscape),
+       screen and (display-mode: standalone) and (max-height: 480px) and (orientation: landscape) {
+  html::before {
+    content: "Please rotate your device to portrait mode";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 1.25rem;
+    padding: 2rem;
+    z-index: 999999;
+  }
+
+  html::after {
+    content: "📱↻";
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, calc(-50% + 3rem));
+    font-size: 3rem;
+    z-index: 999999;
   }
 }
 

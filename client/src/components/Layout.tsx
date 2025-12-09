@@ -291,6 +291,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   }, [isDark]);
 
+  // Lock to portrait orientation on mobile PWA
+  useEffect(() => {
+    // Only attempt on mobile devices (phones, not tablets)
+    const isMobilePhone = window.innerWidth <= 480 ||
+      (window.matchMedia && window.matchMedia('(max-width: 480px)').matches);
+
+    // Check if running as installed PWA (standalone mode)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true;
+
+    if (isMobilePhone && isStandalone && screen.orientation?.lock) {
+      // Try to lock to portrait
+      screen.orientation.lock('portrait-primary').catch((err) => {
+        // Silently fail - not all browsers support this
+        console.log('[Layout] Could not lock orientation:', err.message);
+      });
+    }
+
+    return () => {
+      // Unlock on cleanup (though this component rarely unmounts)
+      if (screen.orientation?.unlock) {
+        screen.orientation.unlock();
+      }
+    };
+  }, []);
+
   // Save current route to localStorage for returning users
   useEffect(() => {
     if (user) {
