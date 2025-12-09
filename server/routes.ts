@@ -475,7 +475,7 @@ export async function registerRoutes(
   // Create topic (admin only - uses service role key to bypass RLS)
   app.post("/api/topics", async (req, res) => {
     try {
-      const { name, icon, slug, display_order, adminEmail } = req.body;
+      const { name, icon, displayOrder, adminEmail } = req.body;
 
       // Verify admin email
       if (adminEmail?.toLowerCase() !== "steve.darlow@gmail.com") {
@@ -486,7 +486,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Topic name is required" });
       }
 
-      log(`[Topic Create] Admin creating topic: ${name}`);
+      // Generate slug from name
+      const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+      log(`[Topic Create] Admin creating topic: ${name} (slug: ${slug})`);
 
       const { error } = await supabase
         .from("topics")
@@ -494,7 +497,7 @@ export async function registerRoutes(
           name: name.trim(),
           icon: icon?.trim() || "💬",
           slug: slug,
-          display_order: display_order || 0
+          display_order: displayOrder || 0
         });
 
       if (error) {
