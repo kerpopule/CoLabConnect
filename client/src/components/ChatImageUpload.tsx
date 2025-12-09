@@ -137,10 +137,10 @@ export function ChatImageUpload({
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     console.log("[ChatImageUpload] handleFileSelect triggered");
 
-    const files = e.target.files;
-    console.log("[ChatImageUpload] Files:", files?.length, "User:", user?.id);
+    const fileList = e.target.files;
+    console.log("[ChatImageUpload] Files:", fileList?.length, "User:", user?.id);
 
-    if (!files || files.length === 0) {
+    if (!fileList || fileList.length === 0) {
       console.log("[ChatImageUpload] No files selected");
       return;
     }
@@ -154,6 +154,11 @@ export function ChatImageUpload({
       });
       return;
     }
+
+    // IMPORTANT: Copy files to array BEFORE resetting input
+    // Resetting input.value clears the FileList!
+    const files = Array.from(fileList);
+    console.log("[ChatImageUpload] Copied files to array:", files.length);
 
     // Reset input so same file can be selected again
     if (fileInputRef.current) {

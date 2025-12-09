@@ -454,20 +454,23 @@ export default function Chat() {
         return [];
       }
 
+      console.log("[group-chats] memberData:", memberData);
+
       // Transform data and calculate unread counts
       const groups = await Promise.all(
         (memberData || []).map(async (membership: any) => {
           const group = membership.group;
           if (!group) return null;
+          console.log("[group-chats] group:", group.id, "group.members:", group.members?.length, group.members);
 
-          // Get latest message timestamp
-          const { data: latestMsg } = await supabase
+          // Get latest message timestamp (use maybeSingle to avoid 406 error when no messages)
+          const { data: latestMsgArray } = await supabase
             .from("group_messages")
             .select("created_at")
             .eq("group_id", group.id)
             .order("created_at", { ascending: false })
-            .limit(1)
-            .single();
+            .limit(1);
+          const latestMsg = latestMsgArray?.[0] || null;
 
           // Count unread messages
           let unreadCount = 0;
@@ -520,14 +523,14 @@ export default function Chat() {
       const connectionsOnly: { profile: Profile; lastMessageAt: string | null; unreadCount: number }[] = [];
 
       for (const chat of privateChats) {
-        // Get latest message
-        const { data: latestMsg } = await supabase
+        // Get latest message (use array to avoid 406 when no messages)
+        const { data: latestMsgArray } = await supabase
           .from("private_messages")
           .select("created_at")
           .or(`and(sender_id.eq.${user.id},receiver_id.eq.${chat.otherId}),and(sender_id.eq.${chat.otherId},receiver_id.eq.${user.id})`)
           .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
+          .limit(1);
+        const latestMsg = latestMsgArray?.[0] || null;
 
         // Get unread count
         const { count: unreadCount } = await supabase
@@ -1984,10 +1987,12 @@ export default function Chat() {
 
   // Get group display name
   const getGroupDisplayName = (group: any) => {
+    console.log("[getGroupDisplayName] group:", group.id, "name:", group.name, "members:", group.members?.length, group.members);
     if (group.name) return group.name;
 
     // Get all accepted members (including current user for proper count)
     const allMembers = group.members?.filter((m: any) => m.status === "accepted") || [];
+    console.log("[getGroupDisplayName] allMembers:", allMembers.length, allMembers);
     if (allMembers.length === 0) return group.emojis?.join("") || "Group";
 
     // Sort: admin first, then by join date

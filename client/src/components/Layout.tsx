@@ -120,8 +120,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   // Detect keyboard visibility on mobile (for hiding tab bar)
   useEffect(() => {
-    // Use multiple detection methods for better iOS compatibility
-    let lastFocusedInput: HTMLElement | null = null;
+    // Track if an input is focused - this is the source of truth for showing keyboard
+    let inputIsFocused = false;
 
     const setKeyboardState = (isOpen: boolean) => {
       console.log('[Layout] setKeyboardState:', isOpen);
@@ -137,74 +137,78 @@ export function Layout({ children }: { children: React.ReactNode }) {
     };
 
     // Check if an input is currently focused
-    const isInputFocused = () => {
-      const activeEl = document.activeElement as HTMLElement;
-      if (!activeEl) return false;
-      return activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable;
+    const isInputElement = (el: Element | null): boolean => {
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable;
     };
 
-    // Method 1: Track focus on text inputs
+    // Method 1: Track focus on text inputs - PRIMARY METHOD
+    // This is the most reliable way to know if keyboard should be visible
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        lastFocusedInput = target;
+      if (isInputElement(target)) {
+        console.log('[Layout] Input focused, hiding nav');
+        inputIsFocused = true;
         setKeyboardState(true);
       }
     };
 
     const handleFocusOut = (e: FocusEvent) => {
       const relatedTarget = e.relatedTarget as HTMLElement | null;
-      // Only close if not focusing another input
-      if (!relatedTarget || (relatedTarget.tagName !== 'INPUT' && relatedTarget.tagName !== 'TEXTAREA' && !relatedTarget.isContentEditable)) {
+      // Only show nav if not focusing another input
+      if (!isInputElement(relatedTarget)) {
         // Delay to handle iOS quirks with keyboard transitions
         setTimeout(() => {
-          if (!isInputFocused()) {
-            lastFocusedInput = null;
+          // Double-check that no input is focused
+          if (!isInputElement(document.activeElement)) {
+            console.log('[Layout] No input focused, showing nav');
+            inputIsFocused = false;
             setKeyboardState(false);
           }
-        }, 150);
+        }, 200);
       }
     };
 
-    // Method 2: VisualViewport API - primary method for iOS
+    // Method 2: VisualViewport API - SECONDARY check
+    // Only use this to detect if keyboard is ALSO open (not to show nav)
     const handleViewportResize = () => {
       if (window.visualViewport) {
-        // On iOS, when keyboard opens, visualViewport.height shrinks
         const viewportHeight = window.visualViewport.height;
         const windowHeight = window.innerHeight;
         const ratio = viewportHeight / windowHeight;
+        const viewportSaysKeyboard = ratio < 0.85;
 
-        // Keyboard is likely open if viewport is less than 85% of window
-        // (more aggressive threshold than before)
-        const isKeyboard = ratio < 0.85;
+        console.log('[Layout] Viewport resize:', { ratio: ratio.toFixed(2), viewportSaysKeyboard, inputIsFocused });
 
-        console.log('[Layout] Viewport resize:', { viewportHeight, windowHeight, ratio, isKeyboard });
-
-        // Always trust the viewport on iOS - it's the most reliable
-        setKeyboardState(isKeyboard);
-      }
-    };
-
-    // Also check on scroll (iOS sometimes doesn't fire resize properly)
-    const handleScroll = () => {
-      if (window.visualViewport && isInputFocused()) {
-        const ratio = window.visualViewport.height / window.innerHeight;
-        if (ratio < 0.85) {
+        // If input is focused, keyboard should always be hidden
+        // Only show nav if BOTH: input not focused AND viewport is full height
+        if (inputIsFocused) {
+          // Input focused = always hide nav
           setKeyboardState(true);
+        } else if (!viewportSaysKeyboard) {
+          // Input not focused AND viewport is full = show nav
+          setKeyboardState(false);
         }
+        // If input not focused but viewport is small, keep current state
+        // (might be in transition)
       }
     };
+
+    // Check current state on mount
+    if (isInputElement(document.activeElement)) {
+      inputIsFocused = true;
+      setKeyboardState(true);
+    }
 
     document.addEventListener('focusin', handleFocusIn);
     document.addEventListener('focusout', handleFocusOut);
     window.visualViewport?.addEventListener('resize', handleViewportResize);
-    window.visualViewport?.addEventListener('scroll', handleScroll);
 
     return () => {
       document.removeEventListener('focusin', handleFocusIn);
       document.removeEventListener('focusout', handleFocusOut);
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
-      window.visualViewport?.removeEventListener('scroll', handleScroll);
       document.body.classList.remove('keyboard-open');
       document.body.removeAttribute('data-keyboard');
     };
