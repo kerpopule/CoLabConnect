@@ -184,6 +184,13 @@ label {
   padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* PWA standalone mode - minimal bottom padding since no browser chrome */
+@media (display-mode: standalone) {
+  .pb-safe {
+    padding-bottom: 0.25rem;
+  }
+}
+
 /* Dynamic viewport height for mobile - accounts for browser chrome */
 .h-dvh {
   height: 100dvh;
