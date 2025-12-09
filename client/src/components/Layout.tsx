@@ -122,11 +122,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Use multiple detection methods for better iOS compatibility
 
+    const setKeyboardState = (isOpen: boolean) => {
+      setIsKeyboardOpen(isOpen);
+      // Also add/remove body class for CSS-based hiding (more reliable on iOS)
+      if (isOpen) {
+        document.body.classList.add('keyboard-open');
+      } else {
+        document.body.classList.remove('keyboard-open');
+      }
+    };
+
     // Method 1: Track focus on text inputs
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        setIsKeyboardOpen(true);
+        setKeyboardState(true);
       }
     };
 
@@ -134,7 +144,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
       const relatedTarget = e.relatedTarget as HTMLElement | null;
       // Only close if not focusing another input
       if (!relatedTarget || (relatedTarget.tagName !== 'INPUT' && relatedTarget.tagName !== 'TEXTAREA' && !relatedTarget.isContentEditable)) {
-        setIsKeyboardOpen(false);
+        // Small delay to handle iOS quirks
+        setTimeout(() => {
+          const activeEl = document.activeElement;
+          if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA' && !(activeEl as HTMLElement).isContentEditable)) {
+            setKeyboardState(false);
+          }
+        }, 100);
       }
     };
 
@@ -142,7 +158,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     const handleViewportResize = () => {
       if (window.visualViewport) {
         const isKeyboard = window.visualViewport.height < window.innerHeight * 0.75;
-        setIsKeyboardOpen(isKeyboard);
+        setKeyboardState(isKeyboard);
       }
     };
 
@@ -154,6 +170,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       document.removeEventListener('focusin', handleFocusIn);
       document.removeEventListener('focusout', handleFocusOut);
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
+      document.body.classList.remove('keyboard-open');
     };
   }, []);
 
@@ -258,7 +275,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Desktop Sidebar / Mobile Bottom Nav */}
-      <nav className={`fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-lg border-t border-border md:top-0 md:bottom-auto md:w-64 md:h-screen md:border-r md:border-t-0 md:flex md:flex-col md:p-6 transition-transform duration-200 ${isKeyboardOpen ? 'translate-y-full md:translate-y-0' : ''}`}>
+      <nav className={`mobile-nav fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-lg border-t border-border md:top-0 md:bottom-auto md:w-64 md:h-screen md:border-r md:border-t-0 md:flex md:flex-col md:p-6 transition-transform duration-200 ${isKeyboardOpen ? 'translate-y-full md:translate-y-0' : ''}`}>
         <div className="hidden md:block mb-8">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-display font-bold text-primary">Co:Lab</h1>

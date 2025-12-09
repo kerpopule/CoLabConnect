@@ -215,6 +215,11 @@ label {
     top: 0;
     left: 0;
   }
+
+  /* Hide mobile nav when keyboard is open */
+  body.keyboard-open nav.mobile-nav {
+    display: none !important;
+  }
 }
 
 /* Large text mode - increases font sizes throughout the app */
