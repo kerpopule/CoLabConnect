@@ -14,7 +14,7 @@ import { NotificationEnableButton, NotificationPrompt, useDmNotificationPrompt }
 import { MessageWrapper, DeletedMessage, EditedIndicator, MessageActions } from "@/components/MessageContextMenu";
 import { MessageContent } from "@/components/LinkPreview";
 import { EmojiReactions, AddReactionButton } from "@/components/EmojiReactions";
-import { ChatImageUpload, ChatImage, ChatFile, isImageUrl, isFileUrl, compressImage } from "@/components/ChatImageUpload";
+import { ChatImageUpload, ChatImage, ChatFile, isImageUrl, isFileUrl } from "@/components/ChatImageUpload";
 import { useToast } from "@/hooks/use-toast";
 import ChatTileGrid from "@/components/ChatTileGrid";
 import GroupCreateModal from "@/components/GroupCreateModal";
@@ -1729,16 +1729,16 @@ export default function Chat() {
     clearPendingImages();
     clearPendingFiles();
 
-    // Helper function to upload a single image
+    // Helper function to upload a single image (already compressed in ChatImageUpload)
     const uploadImage = async (imageData: { file: File; preview: string }) => {
       if (!user) return null;
       try {
-        const compressedBlob = await compressImage(imageData.file);
+        // File is already compressed to JPEG in ChatImageUpload component
         const fileName = `chat/${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
 
         const { error: uploadError } = await supabase.storage
           .from("chat-images")
-          .upload(fileName, compressedBlob, {
+          .upload(fileName, imageData.file, {
             contentType: "image/jpeg",
             upsert: false,
           });
@@ -1749,7 +1749,7 @@ export default function Chat() {
             const fallbackFileName = `chat-${user.id}-${Date.now()}.jpg`;
             const { error: fallbackError } = await supabase.storage
               .from("avatars")
-              .upload(fallbackFileName, compressedBlob, {
+              .upload(fallbackFileName, imageData.file, {
                 contentType: "image/jpeg",
                 upsert: false,
               });

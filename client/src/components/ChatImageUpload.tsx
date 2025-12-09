@@ -136,10 +136,23 @@ export function ChatImageUpload({
         continue;
       }
 
-      // If using new API (onImageSelected/onFileSelected), just create preview and return
+      // If using new API (onImageSelected/onFileSelected), compress and create preview
       if (isImage && onImageSelected) {
-        const previewUrl = URL.createObjectURL(file);
-        onImageSelected(file, previewUrl);
+        try {
+          // Compress image to JPEG for reliable preview (handles HEIC, etc.)
+          const compressedBlob = await compressImage(file);
+          // Create a new File from the compressed blob
+          const compressedFile = new File([compressedBlob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+            type: 'image/jpeg'
+          });
+          const previewUrl = URL.createObjectURL(compressedBlob);
+          onImageSelected(compressedFile, previewUrl);
+        } catch (error) {
+          console.error("Error processing image:", error);
+          // Fallback: try original file
+          const previewUrl = URL.createObjectURL(file);
+          onImageSelected(file, previewUrl);
+        }
         continue;
       }
 
