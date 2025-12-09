@@ -10,6 +10,7 @@ interface TileItem {
   isPending?: boolean;
   isCreate?: boolean;
   isAdmin?: boolean;
+  isWide?: boolean; // Spans 2 columns on mobile
 }
 
 interface ChatTileGridProps {
@@ -150,25 +151,30 @@ function TileButton({ item, onSelect, onAccept, onDecline, onLongPress }: TileBu
     );
   }
 
+  // Wide tile spans 2 columns on mobile
+  const wideClass = item.isWide ? "col-span-2 sm:col-span-1" : "";
+
   return (
-    <div className="relative">
+    <div className={`relative ${wideClass}`}>
       <button
         onClick={handleClick}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
         onContextMenu={handleContextMenu}
-        className="w-full aspect-square rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-1 p-2 hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all cursor-pointer relative select-none"
+        className={`w-full rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-1 p-2 hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all cursor-pointer relative select-none ${
+          item.isWide ? "aspect-[2/1] sm:aspect-square" : "aspect-square"
+        }`}
       >
         {/* Emoji Display */}
-        <div className="text-3xl sm:text-4xl">
+        <div className={item.isWide ? "text-4xl sm:text-4xl" : "text-3xl sm:text-4xl"}>
           {Array.isArray(item.emoji)
             ? item.emoji.join("")
             : item.emoji || "💬"}
         </div>
         {/* Title/Name */}
         {item.name && (
-          <span className="text-sm font-medium text-center px-1 line-clamp-1">
+          <span className={`font-medium text-center px-1 line-clamp-1 ${item.isWide ? "text-base" : "text-sm"}`}>
             {item.name}
           </span>
         )}

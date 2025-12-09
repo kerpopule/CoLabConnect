@@ -28,12 +28,13 @@ type AIMessage = {
 };
 
 // Fallback topics when database is empty - MUST match TOPIC_ORDER below
+// Order: General, Hiring, Fundraising, Tech, Events (Events last and will be wide)
 const FALLBACK_TOPICS = [
   { id: "general", slug: "general", name: "General", icon: "💬", description: "", created_at: "" },
-  { id: "events", slug: "events", name: "Events", icon: "📅", description: "", created_at: "" },
-  { id: "tech", slug: "tech", name: "Tech", icon: "💻", description: "", created_at: "" },
-  { id: "fundraising", slug: "fundraising", name: "Fundraising", icon: "💰", description: "", created_at: "" },
   { id: "hiring", slug: "hiring", name: "Hiring", icon: "💼", description: "", created_at: "" },
+  { id: "fundraising", slug: "fundraising", name: "Fundraising", icon: "💰", description: "", created_at: "" },
+  { id: "tech", slug: "tech", name: "Tech", icon: "💻", description: "", created_at: "" },
+  { id: "events", slug: "events", name: "Events", icon: "📅", description: "", created_at: "" },
 ];
 
 type MessageWithProfile = Message & {
@@ -325,6 +326,20 @@ export default function Chat() {
     }
   }, [user, queryClient]);
 
+  // Track topic last read timestamps in localStorage
+  const getTopicLastRead = useCallback((topicId: string): string | null => {
+    if (!user) return null;
+    const key = `topic_last_read_${user.id}_${topicId}`;
+    return localStorage.getItem(key);
+  }, [user]);
+
+  const markTopicAsRead = useCallback((topicId: string) => {
+    if (!user) return;
+    const key = `topic_last_read_${user.id}_${topicId}`;
+    localStorage.setItem(key, new Date().toISOString());
+    queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+  }, [user, queryClient]);
+
   // Handle URL parameter changes for navigation from push notifications
   useEffect(() => {
     if (dmUserId) {
@@ -343,8 +358,8 @@ export default function Chat() {
     }
   }, [dmUserId, groupIdFromUrl, tabFromUrl, markMessagesAsRead, markGroupAsRead]);
 
-  // Custom topic order: General first, then Events, Tech, Fundraising, Hiring, then others
-  const TOPIC_ORDER = ["general", "events", "tech", "fundraising", "hiring"];
+  /// Custom topic order: General, Hiring, Fundraising, Tech, Events (Events last for wide tile)
+  const TOPIC_ORDER = ["general", "hiring", "fundraising", "tech", "events"];
 
   // Fetch topics
   const { data: topics, isLoading: topicsLoading } = useQuery({
@@ -371,6 +386,38 @@ export default function Chat() {
     },
     staleTime: Infinity,
     gcTime: Infinity,
+  });
+
+  // Fetch unread counts for topics
+  const { data: topicUnreadCounts } = useQuery({
+    queryKey: ["topic-unread-counts", user?.id],
+    queryFn: async () => {
+      if (!user || !topics) return {};
+
+      const counts: Record<string, number> = {};
+
+      for (const topic of topics) {
+        const lastRead = getTopicLastRead(topic.id);
+
+        // Build query for messages after last read, excluding own messages
+        let query = supabase
+          .from("messages")
+          .select("*", { count: "exact", head: true })
+          .eq("topic_id", topic.id)
+          .neq("user_id", user.id);
+
+        if (lastRead) {
+          query = query.gt("created_at", lastRead);
+        }
+
+        const { count } = await query;
+        counts[topic.id] = count || 0;
+      }
+
+      return counts;
+    },
+    enabled: !!user && !!topics && topics.length > 0,
+    refetchInterval: 30000, // Refetch every 30 seconds
   });
 
   // Fetch my private chats (accepted connections)
@@ -2099,6 +2146,7 @@ export default function Chat() {
   const handleSelectTopic = (topicId: string) => {
     setActiveTopic(topicId);
     setViewMode("chat");
+    markTopicAsRead(topicId);
   };
 
   // Handle DM selection
@@ -2174,6 +2222,9 @@ export default function Chat() {
 
   const totalDmUnread = (dmsWithHistory?.active || [])
     .reduce((sum: number, dm: any) => sum + (dm.unreadCount || 0), 0);
+
+  const totalGeneralUnread = Object.values(topicUnreadCounts || {})
+    .reduce((sum: number, count) => sum + (count as number), 0);
 
   // Check if current user is admin of the active group
   const isCurrentUserGroupAdmin = isGroupChat && activeGroupData?.membership_role === "admin";
@@ -2329,6 +2380,11 @@ export default function Chat() {
                 }`}
               >
                 General
+                {totalGeneralUnread > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                    {totalGeneralUnread > 99 ? "99+" : totalGeneralUnread}
+                  </span>
+                )}
               </button>
               <button
                 onClick={() => {
@@ -2498,6 +2554,8 @@ export default function Chat() {
                   id: t.id,
                   emoji: t.icon || "💬",
                   name: t.name,
+                  unreadCount: topicUnreadCounts?.[t.id] || 0,
+                  isWide: t.slug === "events" || t.name.toLowerCase() === "events",
                 }))}
                 onSelect={handleSelectTopic}
               />
