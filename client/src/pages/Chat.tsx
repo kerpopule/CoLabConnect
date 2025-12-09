@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus } from "lucide-react";
+import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Topic, Message, Profile, PrivateMessage, getPrivateChatId, GroupChat, GroupMessage, GroupChatMember } from "@/lib/supabase";
@@ -14,7 +14,7 @@ import { NotificationEnableButton, NotificationPrompt, useDmNotificationPrompt }
 import { MessageWrapper, DeletedMessage, EditedIndicator, MessageActions } from "@/components/MessageContextMenu";
 import { MessageContent } from "@/components/LinkPreview";
 import { EmojiReactions, AddReactionButton } from "@/components/EmojiReactions";
-import { ChatImageUpload, ChatImage, isImageUrl } from "@/components/ChatImageUpload";
+import { ChatImageUpload, ChatImage, isImageUrl, compressImage } from "@/components/ChatImageUpload";
 import { useToast } from "@/hooks/use-toast";
 import ChatTileGrid from "@/components/ChatTileGrid";
 import GroupCreateModal from "@/components/GroupCreateModal";
@@ -95,6 +95,10 @@ export default function Chat() {
   const [inviteModalTab, setInviteModalTab] = useState<"connections" | "members">("connections");
   const [showGroupActions, setShowGroupActions] = useState(false);
   const [showAdminTransfer, setShowAdminTransfer] = useState(false);
+
+  // Image upload state (for previewing before send)
+  const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([]);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
 
   const { user, profile: currentUserProfile, loading: authLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -230,11 +234,33 @@ export default function Chat() {
     // Submit on Ctrl+Enter or Cmd+Enter, not on plain Enter
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      if (input.trim()) {
+      if (input.trim() || pendingImages.length > 0) {
         handleSend(e as unknown as React.FormEvent);
       }
     }
     // Plain Enter adds a new line (default behavior)
+  };
+
+  // Add image to pending queue (for preview before sending)
+  const addPendingImage = (file: File, preview: string) => {
+    setPendingImages(prev => [...prev, { file, preview }]);
+  };
+
+  // Remove image from pending queue
+  const removePendingImage = (index: number) => {
+    setPendingImages(prev => {
+      const newImages = [...prev];
+      // Clean up object URL
+      URL.revokeObjectURL(newImages[index].preview);
+      newImages.splice(index, 1);
+      return newImages;
+    });
+  };
+
+  // Clear all pending images
+  const clearPendingImages = () => {
+    pendingImages.forEach(img => URL.revokeObjectURL(img.preview));
+    setPendingImages([]);
   };
 
   // Mark messages as read when opening a private chat
@@ -1660,7 +1686,7 @@ export default function Chat() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() && pendingImages.length === 0) return;
 
     const content = input.trim();
     setInput("");
@@ -1677,45 +1703,106 @@ export default function Chat() {
       inputRef.current?.focus();
     }, 50);
 
-    if (activeTab === "ai") {
-      await sendAiMessage(content);
-    } else if (activeTab === "dms" && activeDm) {
-      if (!user) return;
-      await sendPrivateMessage.mutateAsync(content);
-      if (activeDmProfile && currentUserProfile) {
-        fetch("/api/notify/dm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            receiverId: activeDm,
-            senderId: user.id,
-            senderName: currentUserProfile.name,
-            messagePreview: content,
-          }),
-        }).catch(console.error);
-      }
-    } else if (activeTab === "groups" && activeGroup) {
-      if (!user) return;
-      await sendGroupMessage.mutateAsync(content);
-      // Send group message notification
-      if (activeGroupData && currentUserProfile) {
-        fetch("/api/notify/group-message", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            groupId: activeGroup,
-            groupName: activeGroupData.name || activeGroupData.emojis?.join(""),
-            senderId: user.id,
-            senderName: currentUserProfile.name,
-            messagePreview: content,
-          }),
-        }).catch(console.error);
+    // Upload pending images first
+    const imagesToSend = [...pendingImages];
+    clearPendingImages();
 
-        // Check for @mentions
-        const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
-        const mentions = content.match(mentionRegex);
-        if (mentions && mentions.length > 0) {
-          fetch("/api/notify/mention", {
+    // Helper function to upload a single image
+    const uploadImage = async (imageData: { file: File; preview: string }) => {
+      if (!user) return null;
+      try {
+        const compressedBlob = await compressImage(imageData.file);
+        const fileName = `chat/${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("chat-images")
+          .upload(fileName, compressedBlob, {
+            contentType: "image/jpeg",
+            upsert: false,
+          });
+
+        if (uploadError) {
+          // Fallback to avatars bucket
+          if (uploadError.message.includes("not found")) {
+            const fallbackFileName = `chat-${user.id}-${Date.now()}.jpg`;
+            const { error: fallbackError } = await supabase.storage
+              .from("avatars")
+              .upload(fallbackFileName, compressedBlob, {
+                contentType: "image/jpeg",
+                upsert: false,
+              });
+
+            if (fallbackError) throw fallbackError;
+
+            const { data: { publicUrl } } = supabase.storage
+              .from("avatars")
+              .getPublicUrl(fallbackFileName);
+
+            return publicUrl;
+          }
+          throw uploadError;
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("chat-images")
+          .getPublicUrl(fileName);
+
+        return publicUrl;
+      } catch (error) {
+        console.error("Image upload error:", error);
+        return null;
+      }
+    };
+
+    // Helper function to send a message with the appropriate mutation
+    const sendMsg = async (msgContent: string) => {
+      if (activeTab === "dms" && activeDm) {
+        await sendPrivateMessage.mutateAsync(msgContent);
+      } else if (activeTab === "groups" && activeGroup) {
+        await sendGroupMessage.mutateAsync(msgContent);
+      } else if (activeTab === "general" && activeTopic) {
+        await sendMessage.mutateAsync(msgContent);
+      }
+    };
+
+    if (activeTab === "ai") {
+      if (content) await sendAiMessage(content);
+    } else if (!user) {
+      return;
+    } else {
+      // Upload and send images first
+      if (imagesToSend.length > 0) {
+        setIsUploadingImages(true);
+        try {
+          for (const img of imagesToSend) {
+            const imageUrl = await uploadImage(img);
+            if (imageUrl) {
+              await sendMsg(imageUrl);
+            }
+          }
+        } finally {
+          setIsUploadingImages(false);
+        }
+      }
+
+      // Send text content
+      if (content) {
+        await sendMsg(content);
+
+        // Send notifications
+        if (activeTab === "dms" && activeDm && activeDmProfile && currentUserProfile) {
+          fetch("/api/notify/dm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              receiverId: activeDm,
+              senderId: user.id,
+              senderName: currentUserProfile.name,
+              messagePreview: content,
+            }),
+          }).catch(console.error);
+        } else if (activeTab === "groups" && activeGroup && activeGroupData && currentUserProfile) {
+          fetch("/api/notify/group-message", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1724,43 +1811,58 @@ export default function Chat() {
               senderId: user.id,
               senderName: currentUserProfile.name,
               messagePreview: content,
-              mentionedNames: mentions.map(m => m.substring(1)),
             }),
           }).catch(console.error);
-        }
-      }
-    } else if (activeTab === "general" && activeTopic) {
-      if (!user) return;
-      await sendMessage.mutateAsync(content);
-      const currentTopic = displayTopics.find((t) => t.id === activeTopic);
-      if (activeTopic && currentTopic && currentUserProfile) {
-        fetch("/api/notify/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            topicId: activeTopic,
-            topicName: currentTopic.name,
-            senderId: user.id,
-            senderName: currentUserProfile.name,
-            messagePreview: content,
-          }),
-        }).catch(console.error);
 
-        const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
-        const mentions = content.match(mentionRegex);
-        if (mentions && mentions.length > 0) {
-          fetch("/api/notify/mention", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              topicId: activeTopic,
-              topicName: currentTopic.name,
-              senderId: user.id,
-              senderName: currentUserProfile.name,
-              messagePreview: content,
-              mentionedNames: mentions.map(m => m.substring(1)),
-            }),
-          }).catch(console.error);
+          // Check for @mentions
+          const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
+          const mentions = content.match(mentionRegex);
+          if (mentions && mentions.length > 0) {
+            fetch("/api/notify/mention", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                groupId: activeGroup,
+                groupName: activeGroupData.name || activeGroupData.emojis?.join(""),
+                senderId: user.id,
+                senderName: currentUserProfile.name,
+                messagePreview: content,
+                mentionedNames: mentions.map(m => m.substring(1)),
+              }),
+            }).catch(console.error);
+          }
+        } else if (activeTab === "general" && activeTopic) {
+          const topicForNotify = displayTopics.find((t) => t.id === activeTopic);
+          if (topicForNotify && currentUserProfile) {
+            fetch("/api/notify/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                topicId: activeTopic,
+                topicName: topicForNotify.name,
+                senderId: user.id,
+                senderName: currentUserProfile.name,
+                messagePreview: content,
+              }),
+            }).catch(console.error);
+
+            const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
+            const mentions = content.match(mentionRegex);
+            if (mentions && mentions.length > 0) {
+              fetch("/api/notify/mention", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  topicId: activeTopic,
+                  topicName: topicForNotify.name,
+                  senderId: user.id,
+                  senderName: currentUserProfile.name,
+                  messagePreview: content,
+                  mentionedNames: mentions.map(m => m.substring(1)),
+                }),
+              }).catch(console.error);
+            }
+          }
         }
       }
     }
@@ -1897,6 +1999,14 @@ export default function Chat() {
     p => !existingMemberIds.includes(p.id)
   );
 
+  // Calculate total unread counts for tab badges
+  const totalGroupUnread = (groupChats || [])
+    .filter((g: any) => g.membership_status === "accepted")
+    .reduce((sum: number, g: any) => sum + (g.unread_count || 0), 0);
+
+  const totalDmUnread = (dmsWithHistory?.active || [])
+    .reduce((sum: number, dm: any) => sum + (dm.unreadCount || 0), 0);
+
   // Check if current user is admin of the active group
   const isCurrentUserGroupAdmin = isGroupChat && activeGroupData?.membership_role === "admin";
 
@@ -2020,26 +2130,31 @@ export default function Chat() {
 
           {/* Tab Buttons - hidden when in chat view */}
           {(viewMode === "list" || activeTab === "ai") && (
-            <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+            <div className="flex items-center gap-1.5 bg-muted rounded-lg p-1">
               <button
                 onClick={() => {
                   setActiveTab("groups");
                   setViewMode("list");
                 }}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`relative px-4 py-2 rounded-md text-sm font-medium transition-all ${
                   activeTab === "groups"
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Groups
+                {totalGroupUnread > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                    {totalGroupUnread > 99 ? "99+" : totalGroupUnread}
+                  </span>
+                )}
               </button>
               <button
                 onClick={() => {
                   setActiveTab("general");
                   setViewMode("list");
                 }}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`relative px-4 py-2 rounded-md text-sm font-medium transition-all ${
                   activeTab === "general"
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -2052,13 +2167,18 @@ export default function Chat() {
                   setActiveTab("dms");
                   setViewMode("list");
                 }}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`relative px-4 py-2 rounded-md text-sm font-medium transition-all ${
                   activeTab === "dms"
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 DMs
+                {totalDmUnread > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                    {totalDmUnread > 99 ? "99+" : totalDmUnread}
+                  </span>
+                )}
               </button>
             </div>
           )}
@@ -2495,22 +2615,46 @@ export default function Chat() {
 
             {/* Input Area */}
             <div className="shrink-0 p-3 md:p-4 pb-safe bg-card border-t border-border sticky bottom-0">
+              {/* Image previews before sending */}
+              {pendingImages.length > 0 && (
+                <div className="mb-3 flex gap-2 flex-wrap">
+                  {pendingImages.map((img, idx) => (
+                    <div key={idx} className="relative group">
+                      <img
+                        src={img.preview}
+                        alt={`Preview ${idx + 1}`}
+                        className={`h-16 w-16 object-cover rounded-lg border-2 border-primary/30 ${
+                          pendingImages.length > 1 ? (idx > 0 ? '-ml-4' : '') : ''
+                        }`}
+                        style={pendingImages.length > 1 && idx > 0 ? { marginLeft: '-8px', zIndex: pendingImages.length - idx } : undefined}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePendingImage(idx)}
+                        className="absolute -top-2 -right-2 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-transform"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <form onSubmit={handleSend} className="flex gap-2 items-end relative">
                 {isAiChat ? (
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="text-muted-foreground shrink-0 rounded-full"
+                    className="text-muted-foreground shrink-0 rounded-full h-11 w-11"
                   >
-                    <Sparkles className="h-5 w-5" />
+                    <Sparkles className="h-6 w-6" />
                   </Button>
                 ) : (
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className={`shrink-0 rounded-full transition-colors ${
+                    className={`shrink-0 rounded-full transition-colors h-11 w-11 ${
                       isGroupChat
                         ? (isGroupNotificationsEnabled ? "text-primary" : "text-muted-foreground")
                         : isPrivateChat
@@ -2550,29 +2694,23 @@ export default function Chat() {
                     }
                   >
                     {followLoading ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <Loader2 className="h-6 w-6 animate-spin" />
                     ) : isGroupChat ? (
-                      isGroupNotificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />
+                      isGroupNotificationsEnabled ? <Bell className="h-6 w-6" /> : <BellOff className="h-6 w-6" />
                     ) : isPrivateChat ? (
-                      hasNotificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />
+                      hasNotificationsEnabled ? <Bell className="h-6 w-6" /> : <BellOff className="h-6 w-6" />
                     ) : (
-                      isFollowingTopic ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />
+                      isFollowingTopic ? <Bell className="h-6 w-6" /> : <BellOff className="h-6 w-6" />
                     )}
                   </Button>
                 )}
                 {/* Image upload button (not for AI chat) */}
                 {!isAiChat && (
                   <ChatImageUpload
-                    onImageUploaded={(imageUrl) => {
-                      if (isPrivateChat) {
-                        sendPrivateMessage.mutate(imageUrl);
-                      } else if (isGroupChat) {
-                        sendGroupMessage.mutate(imageUrl);
-                      } else {
-                        sendMessage.mutate(imageUrl);
-                      }
-                    }}
-                    disabled={isPending}
+                    onImageSelected={addPendingImage}
+                    disabled={isPending || isUploadingImages}
+                    iconSize="h-6 w-6"
+                    buttonSize="h-11 w-11"
                   />
                 )}
                 <textarea
@@ -2589,21 +2727,21 @@ export default function Chat() {
                       ? `Message ${activeGroupData?.name || "group"}...`
                       : `Message #${currentTopic?.name || "chat"}...`
                   }
-                  className="flex-1 min-h-[40px] max-h-[150px] py-2.5 px-4 rounded-2xl bg-muted/50 border-transparent focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all pr-12 resize-none text-[15px] leading-relaxed overflow-y-auto"
-                  disabled={isPending}
+                  className="flex-1 min-h-[44px] max-h-[150px] py-3 px-4 rounded-2xl bg-muted/50 border-transparent focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all pr-14 resize-none text-[15px] leading-relaxed overflow-y-auto"
+                  disabled={isPending || isUploadingImages}
                   rows={1}
                 />
                 <Button
                   type="submit"
                   size="icon"
-                  className="absolute right-1 bottom-1 h-8 w-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-transform hover:scale-105"
-                  disabled={!input.trim() || isPending}
+                  className="absolute right-1.5 bottom-1.5 h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-transform hover:scale-105"
+                  disabled={(!input.trim() && pendingImages.length === 0) || isPending || isUploadingImages}
                   title="Send (Ctrl+Enter)"
                 >
-                  {isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  {isPending || isUploadingImages ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
-                    <Send className="h-4 w-4" />
+                    <Send className="h-5 w-5" />
                   )}
                 </Button>
               </form>

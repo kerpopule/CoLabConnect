@@ -120,19 +120,40 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   // Detect keyboard visibility on mobile (for hiding tab bar)
   useEffect(() => {
-    // Check if VisualViewport API is available
-    if (!window.visualViewport) return;
+    // Use multiple detection methods for better iOS compatibility
 
-    const handleResize = () => {
-      // Compare visual viewport height to window height
-      // When keyboard opens, visual viewport becomes smaller
-      const isKeyboard = window.visualViewport!.height < window.innerHeight * 0.75;
-      setIsKeyboardOpen(isKeyboard);
+    // Method 1: Track focus on text inputs
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        setIsKeyboardOpen(true);
+      }
     };
 
-    window.visualViewport.addEventListener('resize', handleResize);
+    const handleFocusOut = (e: FocusEvent) => {
+      const relatedTarget = e.relatedTarget as HTMLElement | null;
+      // Only close if not focusing another input
+      if (!relatedTarget || (relatedTarget.tagName !== 'INPUT' && relatedTarget.tagName !== 'TEXTAREA' && !relatedTarget.isContentEditable)) {
+        setIsKeyboardOpen(false);
+      }
+    };
+
+    // Method 2: VisualViewport API (backup for Android/newer iOS)
+    const handleViewportResize = () => {
+      if (window.visualViewport) {
+        const isKeyboard = window.visualViewport.height < window.innerHeight * 0.75;
+        setIsKeyboardOpen(isKeyboard);
+      }
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+    window.visualViewport?.addEventListener('resize', handleViewportResize);
+
     return () => {
-      window.visualViewport?.removeEventListener('resize', handleResize);
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+      window.visualViewport?.removeEventListener('resize', handleViewportResize);
     };
   }, []);
 
