@@ -217,12 +217,8 @@ label {
   }
 
   /* Hide mobile nav when keyboard is open - aggressive rules for iOS */
-  body.keyboard-open nav.mobile-nav,
-  body.keyboard-open nav:not(.md\\:flex),
-  body[data-keyboard="open"] nav.mobile-nav,
-  body[data-keyboard="open"] nav:not(.md\\:flex),
-  html body.keyboard-open nav,
-  html body[data-keyboard="open"] nav {
+  body.keyboard-open .mobile-nav,
+  body[data-keyboard="open"] .mobile-nav {
     transform: translateY(200%) !important;
     opacity: 0 !important;
     pointer-events: none !important;
