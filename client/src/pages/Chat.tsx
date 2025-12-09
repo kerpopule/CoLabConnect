@@ -95,6 +95,7 @@ export default function Chat() {
   const [inviteModalTab, setInviteModalTab] = useState<"connections" | "members">("connections");
   const [showGroupActions, setShowGroupActions] = useState(false);
   const [showAdminTransfer, setShowAdminTransfer] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Image/file upload state (for previewing before send)
   const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([]);
@@ -1579,18 +1580,50 @@ export default function Chat() {
       (m: any) => m.user_id === user.id
     );
     const isAdmin = currentUserMembership?.role === "admin";
-    const acceptedMembers = activeGroupData.members?.filter(
+    // Other accepted members (excluding current user)
+    const otherAcceptedMembers = activeGroupData.members?.filter(
       (m: any) => m.status === "accepted" && m.user_id !== user.id
     ) || [];
 
     // If admin and there are other members, show admin transfer UI
-    if (isAdmin && acceptedMembers.length > 0) {
+    if (isAdmin && otherAcceptedMembers.length > 0) {
       setShowGroupActions(false);
       setShowAdminTransfer(true);
       return;
     }
 
-    // If last member or not admin, just leave
+    // Check if this user is the last member BEFORE leaving
+    const isLastMember = otherAcceptedMembers.length === 0;
+    console.log("[handleLeaveGroup] isLastMember:", isLastMember, "otherAcceptedMembers:", otherAcceptedMembers.length);
+
+    // If last member, delete the group directly
+    if (isLastMember) {
+      console.log("[handleLeaveGroup] Deleting group as last member...");
+      const { error: deleteError } = await supabase
+        .from("group_chats")
+        .delete()
+        .eq("id", activeGroup);
+
+      if (deleteError) {
+        console.error("Error deleting group:", deleteError);
+        toast({
+          variant: "destructive",
+          title: "Failed to delete group",
+          description: "Please try again.",
+        });
+        return;
+      }
+
+      console.log("[handleLeaveGroup] Group deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+      setActiveGroup(null);
+      setViewMode("list");
+      setShowGroupActions(false);
+      toast({ title: "Group deleted" });
+      return;
+    }
+
+    // Otherwise, just leave the group (keep it for other members)
     const { error } = await supabase
       .from("group_chat_members")
       .delete()
@@ -1605,11 +1638,6 @@ export default function Chat() {
         description: "Please try again.",
       });
       return;
-    }
-
-    // If last member, delete the group
-    if (acceptedMembers.length === 0) {
-      await supabase.from("group_chats").delete().eq("id", activeGroup);
     }
 
     queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
@@ -1672,12 +1700,19 @@ export default function Chat() {
     toast({ title: "Admin transferred and left group" });
   };
 
-  // Delete group (admin only)
-  const handleDeleteGroup = async () => {
+  // Delete group (admin only) - show confirmation modal
+  const handleDeleteGroup = () => {
+    if (!user || !activeGroup || !activeGroupData) return;
+    console.log("[handleDeleteGroup] Opening delete confirmation modal");
+    setShowGroupActions(false);
+    setShowDeleteConfirm(true);
+  };
+
+  // Actually delete the group after confirmation
+  const confirmDeleteGroup = async () => {
     if (!user || !activeGroup || !activeGroupData) return;
 
-    const confirmed = window.confirm("Delete this group? This cannot be undone.");
-    if (!confirmed) return;
+    console.log("[confirmDeleteGroup] Deleting group:", activeGroup);
 
     // Notify all members
     const members = activeGroupData.members?.filter(
@@ -1711,13 +1746,15 @@ export default function Chat() {
         title: "Failed to delete group",
         description: "Please try again.",
       });
+      setShowDeleteConfirm(false);
       return;
     }
 
+    console.log("[confirmDeleteGroup] Group deleted successfully");
     queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
     setActiveGroup(null);
     setViewMode("list");
-    setShowGroupActions(false);
+    setShowDeleteConfirm(false);
     toast({ title: "Group deleted" });
   };
 
@@ -3132,6 +3169,41 @@ export default function Chat() {
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Group Confirmation Modal */}
+      {showDeleteConfirm && activeGroupData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowDeleteConfirm(false)}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/10 flex items-center justify-center">
+                <Trash2 className="h-8 w-8 text-red-500" />
+              </div>
+              <h2 className="text-lg font-semibold mb-2">Delete Group?</h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                This will permanently delete "{activeGroupData.name || activeGroupData.emojis?.join("")}" and all its messages. This cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 p-3 rounded-xl border border-border hover:bg-muted transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteGroup}
+                  className="flex-1 p-3 rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors font-medium"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
         </div>
