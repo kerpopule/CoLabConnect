@@ -2785,7 +2785,7 @@ export default function Chat() {
             )}
 
             {/* Input Area */}
-            <div className="shrink-0 px-3 pt-2 pb-safe md:px-4 md:pt-3 bg-card border-t border-border sticky bottom-0">
+            <div className="shrink-0 px-3 py-2 pb-safe md:px-4 md:py-3 bg-card border-t border-border sticky bottom-0">
               {/* Image and file previews before sending */}
               {(pendingImages.length > 0 || pendingFiles.length > 0) && (
                 <div className="mb-3 flex gap-2 flex-wrap items-end">
