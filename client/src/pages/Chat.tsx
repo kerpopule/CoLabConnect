@@ -552,8 +552,14 @@ export default function Chat() {
       title: "Topic order saved",
       description: "All users will now see topics in this order.",
     });
-    setIsReorderingTopics(false);
-    setPendingTopicOrder([]);
+
+    // Delay exiting reorder mode to allow React to re-render with new data first
+    // This ensures ChatTileGrid receives the updated items before switching display modes
+    setTimeout(() => {
+      console.log('[Topic Reorder] Exiting reorder mode');
+      setIsReorderingTopics(false);
+      setPendingTopicOrder([]);
+    }, 100);
   };
 
   // Cancel topic reordering
