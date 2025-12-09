@@ -216,9 +216,15 @@ label {
     left: 0;
   }
 
-  /* Hide mobile nav when keyboard is open */
-  body.keyboard-open nav.mobile-nav {
-    display: none !important;
+  /* Hide mobile nav when keyboard is open - multiple selectors for reliability */
+  body.keyboard-open nav.mobile-nav,
+  body.keyboard-open nav,
+  body[data-keyboard="open"] nav.mobile-nav,
+  body[data-keyboard="open"] nav {
+    transform: translateY(100%) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
   }
 }
 

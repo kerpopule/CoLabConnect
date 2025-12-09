@@ -124,11 +124,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
     const setKeyboardState = (isOpen: boolean) => {
       setIsKeyboardOpen(isOpen);
-      // Also add/remove body class for CSS-based hiding (more reliable on iOS)
+      // Also add/remove body class AND data attribute for CSS-based hiding (more reliable on iOS)
       if (isOpen) {
         document.body.classList.add('keyboard-open');
+        document.body.setAttribute('data-keyboard', 'open');
       } else {
         document.body.classList.remove('keyboard-open');
+        document.body.removeAttribute('data-keyboard');
       }
     };
 
@@ -171,6 +173,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       document.removeEventListener('focusout', handleFocusOut);
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
       document.body.classList.remove('keyboard-open');
+      document.body.removeAttribute('data-keyboard');
     };
   }, []);
 

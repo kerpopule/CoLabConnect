@@ -139,19 +139,31 @@ export function ChatImageUpload({
       // If using new API (onImageSelected/onFileSelected), compress and create preview
       if (isImage && onImageSelected) {
         try {
-          // Compress image to JPEG for reliable preview (handles HEIC, etc.)
+          // Try to compress image to JPEG for reliable preview (handles HEIC, etc.)
           const compressedBlob = await compressImage(file);
           // Create a new File from the compressed blob
           const compressedFile = new File([compressedBlob], file.name.replace(/\.[^.]+$/, '.jpg'), {
             type: 'image/jpeg'
           });
           const previewUrl = URL.createObjectURL(compressedBlob);
+          console.log('[ChatImageUpload] Image compressed successfully, preview URL:', previewUrl);
           onImageSelected(compressedFile, previewUrl);
         } catch (error) {
-          console.error("Error processing image:", error);
-          // Fallback: try original file
-          const previewUrl = URL.createObjectURL(file);
-          onImageSelected(file, previewUrl);
+          console.error("[ChatImageUpload] Error compressing image:", error);
+          // Fallback: create object URL directly from original file
+          // This works for most image types except HEIC on non-Safari browsers
+          try {
+            const previewUrl = URL.createObjectURL(file);
+            console.log('[ChatImageUpload] Using original file for preview:', previewUrl);
+            onImageSelected(file, previewUrl);
+          } catch (fallbackError) {
+            console.error("[ChatImageUpload] Fallback also failed:", fallbackError);
+            toast({
+              variant: "destructive",
+              title: "Image error",
+              description: "Could not process this image. Try a different photo.",
+            });
+          }
         }
         continue;
       }

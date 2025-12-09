@@ -244,7 +244,12 @@ export default function Chat() {
 
   // Add image to pending queue (for preview before sending)
   const addPendingImage = (file: File, preview: string) => {
-    setPendingImages(prev => [...prev, { file, preview }]);
+    console.log('[Chat] addPendingImage called with:', { fileName: file.name, fileType: file.type, preview });
+    setPendingImages(prev => {
+      const newImages = [...prev, { file, preview }];
+      console.log('[Chat] pendingImages updated, count:', newImages.length);
+      return newImages;
+    });
   };
 
   // Remove image from pending queue
@@ -2772,7 +2777,7 @@ export default function Chat() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className={`shrink-0 rounded-full transition-colors h-11 w-11 ${
+                    className={`shrink-0 rounded-full transition-colors h-12 w-12 ${
                       isGroupChat
                         ? (isGroupNotificationsEnabled ? "text-primary" : "text-muted-foreground")
                         : isPrivateChat
@@ -2812,13 +2817,13 @@ export default function Chat() {
                     }
                   >
                     {followLoading ? (
-                      <Loader2 className="h-7 w-7 animate-spin" />
+                      <Loader2 className="h-8 w-8 animate-spin" />
                     ) : isGroupChat ? (
-                      isGroupNotificationsEnabled ? <Bell className="h-7 w-7" /> : <BellOff className="h-7 w-7" />
+                      isGroupNotificationsEnabled ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
                     ) : isPrivateChat ? (
-                      hasNotificationsEnabled ? <Bell className="h-7 w-7" /> : <BellOff className="h-7 w-7" />
+                      hasNotificationsEnabled ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
                     ) : (
-                      isFollowingTopic ? <Bell className="h-7 w-7" /> : <BellOff className="h-7 w-7" />
+                      isFollowingTopic ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
                     )}
                   </Button>
                 )}
@@ -2828,8 +2833,8 @@ export default function Chat() {
                     onImageSelected={addPendingImage}
                     onFileSelected={addPendingFile}
                     disabled={isPending || isUploadingImages}
-                    iconSize="h-7 w-7"
-                    buttonSize="h-11 w-11"
+                    iconSize="h-8 w-8"
+                    buttonSize="h-12 w-12"
                   />
                 )}
                 <textarea
@@ -2837,15 +2842,7 @@ export default function Chat() {
                   value={input}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  placeholder={
-                    isAiChat
-                      ? "Ask the AI anything..."
-                      : isPrivateChat
-                      ? `Message ${activeDmProfile?.name?.split(" ")[0] || "privately"}...`
-                      : isGroupChat
-                      ? `Message ${activeGroupData?.name || "group"}...`
-                      : `Message #${currentTopic?.name || "chat"}...`
-                  }
+                  placeholder="Type here..."
                   className="flex-1 min-h-[44px] max-h-[150px] py-3 px-4 rounded-2xl bg-muted/50 border-transparent focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all pr-14 resize-none text-[15px] leading-relaxed overflow-y-auto"
                   disabled={isPending || isUploadingImages}
                   rows={1}
@@ -2854,7 +2851,7 @@ export default function Chat() {
                   type="submit"
                   size="icon"
                   className="absolute right-1.5 bottom-1.5 h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-transform hover:scale-105"
-                  disabled={(!input.trim() && pendingImages.length === 0) || isPending || isUploadingImages}
+                  disabled={(!input.trim() && pendingImages.length === 0 && pendingFiles.length === 0) || isPending || isUploadingImages}
                   title="Send (Ctrl+Enter)"
                 >
                   {isPending || isUploadingImages ? (
