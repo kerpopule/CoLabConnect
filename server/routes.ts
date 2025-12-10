@@ -1081,10 +1081,10 @@ export async function registerRoutes(
   });
 
   // ============================================
-  // Profile Reminder Notifications
+  // Reminder Notification Endpoints
   // ============================================
 
-  // Trigger incomplete profile reminders (call daily via cron or manually)
+  // Trigger incomplete profile reminders (call manually or via scheduler)
   app.post("/api/notify/profile-reminders", async (req, res) => {
     try {
       const { sendIncompleteProfileReminders } = await import("./pushNotifications");
@@ -1097,12 +1097,41 @@ export async function registerRoutes(
     }
   });
 
-  // ============================================
-  // Daily Scheduler for Profile Reminders
-  // ============================================
+  // Trigger pending connection reminders
+  app.post("/api/notify/connection-reminders", async (req, res) => {
+    try {
+      const { sendPendingConnectionReminders } = await import("./pushNotifications");
+      const result = await sendPendingConnectionReminders();
+      log(`Connection reminders sent: ${result.sent}, errors: ${result.errors.length}`);
+      res.json(result);
+    } catch (error: any) {
+      log(`Connection reminder error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
 
-  // Schedule daily profile reminder at 10 AM local server time
-  const scheduleProfileReminders = () => {
+  // Trigger unread messages reminders
+  app.post("/api/notify/message-reminders", async (req, res) => {
+    try {
+      const { sendUnreadMessagesReminders } = await import("./pushNotifications");
+      const result = await sendUnreadMessagesReminders();
+      log(`Message reminders sent: ${result.sent}, errors: ${result.errors.length}`);
+      res.json(result);
+    } catch (error: any) {
+      log(`Message reminder error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================
+  // 3-Day Rotation Scheduler for Reminders
+  // ============================================
+  // Day 1: Pending connection requests
+  // Day 2: Incomplete profile reminders
+  // Day 3: Unread messages
+  // Then repeat...
+
+  const scheduleRotatingReminders = () => {
     const now = new Date();
     const targetHour = 10; // 10 AM
 
@@ -1117,33 +1146,67 @@ export async function registerRoutes(
 
     const msUntilNext = next10AM.getTime() - now.getTime();
 
-    log(`Profile reminders scheduled for ${next10AM.toLocaleString()} (in ${Math.round(msUntilNext / 1000 / 60)} minutes)`);
+    // Calculate which day in the 3-day rotation we're on
+    // Use Unix epoch to determine consistent rotation
+    const daysSinceEpoch = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+    let rotationDay = daysSinceEpoch % 3; // 0, 1, or 2
+
+    const getReminderType = (day: number) => {
+      switch (day) {
+        case 0: return "pending-connections";
+        case 1: return "incomplete-profile";
+        case 2: return "unread-messages";
+        default: return "pending-connections";
+      }
+    };
+
+    log(`Rotating reminders scheduled for ${next10AM.toLocaleString()} (in ${Math.round(msUntilNext / 1000 / 60)} minutes)`);
+    log(`Next reminder type: ${getReminderType(rotationDay)}`);
+
+    const runReminder = async () => {
+      const currentDaysSinceEpoch = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+      const currentRotationDay = currentDaysSinceEpoch % 3;
+      const reminderType = getReminderType(currentRotationDay);
+
+      log(`Running ${reminderType} reminder (rotation day ${currentRotationDay})`);
+
+      try {
+        switch (reminderType) {
+          case "pending-connections": {
+            const { sendPendingConnectionReminders } = await import("./pushNotifications");
+            const result = await sendPendingConnectionReminders();
+            log(`Pending connection reminders sent: ${result.sent}, errors: ${result.errors.length}`);
+            break;
+          }
+          case "incomplete-profile": {
+            const { sendIncompleteProfileReminders } = await import("./pushNotifications");
+            const result = await sendIncompleteProfileReminders();
+            log(`Incomplete profile reminders sent: ${result.sent}, errors: ${result.errors.length}`);
+            break;
+          }
+          case "unread-messages": {
+            const { sendUnreadMessagesReminders } = await import("./pushNotifications");
+            const result = await sendUnreadMessagesReminders();
+            log(`Unread messages reminders sent: ${result.sent}, errors: ${result.errors.length}`);
+            break;
+          }
+        }
+      } catch (error: any) {
+        log(`Rotating reminder error (${reminderType}): ${error.message}`);
+      }
+    };
 
     // Set timeout for first run
     setTimeout(async () => {
-      try {
-        const { sendIncompleteProfileReminders } = await import("./pushNotifications");
-        const result = await sendIncompleteProfileReminders();
-        log(`Daily profile reminders sent: ${result.sent}, errors: ${result.errors.length}`);
-      } catch (error: any) {
-        log(`Daily profile reminder error: ${error.message}`);
-      }
+      await runReminder();
 
-      // Then set interval for every 24 hours
-      setInterval(async () => {
-        try {
-          const { sendIncompleteProfileReminders } = await import("./pushNotifications");
-          const result = await sendIncompleteProfileReminders();
-          log(`Daily profile reminders sent: ${result.sent}, errors: ${result.errors.length}`);
-        } catch (error: any) {
-          log(`Daily profile reminder error: ${error.message}`);
-        }
-      }, 24 * 60 * 60 * 1000); // 24 hours
+      // Then set interval for every 24 hours (runs daily, but different reminder each day)
+      setInterval(runReminder, 24 * 60 * 60 * 1000); // 24 hours
     }, msUntilNext);
   };
 
   // Start the scheduler
-  scheduleProfileReminders();
+  scheduleRotatingReminders();
 
   return httpServer;
 }

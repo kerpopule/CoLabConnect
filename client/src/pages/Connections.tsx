@@ -15,6 +15,7 @@ import {
   Inbox,
   Trash2,
   MoreHorizontal,
+  Clock,
 } from "lucide-react";
 import {
   ContextMenu,
@@ -64,6 +65,28 @@ export default function Connections() {
           follower_profile:profiles!connections_follower_id_fkey(*)
         `)
         .eq("following_id", user.id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return data as ConnectionWithProfile[];
+    },
+    enabled: !!user,
+  });
+
+  // Fetch outgoing pending requests (people I've requested to connect with)
+  const { data: outgoingPending, isLoading: loadingOutgoing } = useQuery({
+    queryKey: ["connections", "outgoing", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from("connections")
+        .select(`
+          *,
+          following_profile:profiles!connections_following_id_fkey(*)
+        `)
+        .eq("follower_id", user.id)
         .eq("status", "pending")
         .order("created_at", { ascending: false });
 
@@ -225,18 +248,20 @@ export default function Connections() {
     },
   });
 
-  // Decline connection request
+  // Decline connection request - deletes the connection so they can request again later
   const declineRequest = useMutation({
     mutationFn: async (connectionId: string) => {
       const { error } = await supabase
         .from("connections")
-        .update({ status: "rejected" })
+        .delete()
         .eq("id", connectionId);
 
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
       toast({
         title: "Request declined",
       });
@@ -245,6 +270,32 @@ export default function Connections() {
       toast({
         variant: "destructive",
         title: "Failed to decline",
+        description: error.message,
+      });
+    },
+  });
+
+  // Cancel outgoing pending request
+  const cancelRequest = useMutation({
+    mutationFn: async (connectionId: string) => {
+      const { error } = await supabase
+        .from("connections")
+        .delete()
+        .eq("id", connectionId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+      toast({
+        title: "Request cancelled",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to cancel request",
         description: error.message,
       });
     },
@@ -344,7 +395,8 @@ export default function Connections() {
     );
   }
 
-  const pendingCount = incomingRequests?.length || 0;
+  const incomingCount = incomingRequests?.length || 0;
+  const outgoingCount = outgoingPending?.length || 0;
 
   return (
     <div className="space-y-6 pb-24">
@@ -356,10 +408,10 @@ export default function Connections() {
       </div>
 
       <Tabs defaultValue="connections" className="w-full">
-        <TabsList className="w-full justify-start bg-muted/50 p-1 rounded-xl">
+        <TabsList className="w-full justify-start bg-muted/50 p-1 rounded-xl overflow-x-auto">
           <TabsTrigger value="connections" className="rounded-lg flex items-center gap-2">
             <UserCheck className="h-4 w-4" />
-            My Connections
+            <span className="hidden sm:inline">My </span>Connections
             {myConnections && myConnections.length > 0 && (
               <span className="ml-1 text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">
                 {myConnections.length}
@@ -369,9 +421,18 @@ export default function Connections() {
           <TabsTrigger value="requests" className="rounded-lg flex items-center gap-2">
             <Inbox className="h-4 w-4" />
             Requests
-            {pendingCount > 0 && (
+            {incomingCount > 0 && (
               <span className="ml-1 text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full animate-pulse">
-                {pendingCount}
+                {incomingCount}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="pending" className="rounded-lg flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Pending
+            {outgoingCount > 0 && (
+              <span className="ml-1 text-xs bg-muted-foreground/20 text-muted-foreground px-2 py-0.5 rounded-full">
+                {outgoingCount}
               </span>
             )}
           </TabsTrigger>
@@ -537,6 +598,71 @@ export default function Connections() {
               <h3 className="font-semibold mb-2">No pending requests</h3>
               <p className="text-muted-foreground">
                 When someone wants to connect, you'll see their request here
+              </p>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* My Pending Requests Tab (requests I've sent) */}
+        <TabsContent value="pending" className="mt-6">
+          {loadingOutgoing ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : outgoingPending && outgoingPending.length > 0 ? (
+            <div className="grid gap-4">
+              {outgoingPending.map((request) => {
+                const profile = request.following_profile;
+                if (!profile) return null;
+
+                return (
+                  <Card key={request.id} className="border-border/50 border-l-4 border-l-muted-foreground/30">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <Link href={`/profile/${profile.id}`}>
+                          <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
+                            <Avatar className="h-12 w-12">
+                              <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
+                              <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                                {getInitials(profile.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <h3 className="font-semibold">{profile.name}</h3>
+                              <p className="text-sm text-muted-foreground">
+                                {profile.role || "Member"} • Request sent
+                              </p>
+                            </div>
+                          </div>
+                        </Link>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full text-muted-foreground"
+                          onClick={() => cancelRequest.mutate(request.id)}
+                          disabled={cancelRequest.isPending}
+                        >
+                          {cancelRequest.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <X className="h-4 w-4 mr-1" />
+                              Cancel
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <Clock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="font-semibold mb-2">No pending requests</h3>
+              <p className="text-muted-foreground">
+                Requests you've sent that are awaiting a response will appear here
               </p>
             </div>
           )}

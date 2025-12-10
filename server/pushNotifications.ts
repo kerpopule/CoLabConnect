@@ -673,3 +673,217 @@ export async function sendIncompleteProfileReminders(): Promise<{ sent: number; 
     return { sent, errors: [err.message] };
   }
 }
+
+// Send reminder notification for pending connection requests
+export async function sendPendingConnectionReminders(): Promise<{ sent: number; errors: string[] }> {
+  const errors: string[] = [];
+  let sent = 0;
+
+  try {
+    // Get all users who have push subscriptions
+    const { data: usersWithPush, error: subError } = await supabase
+      .from("push_subscriptions")
+      .select("user_id")
+      .order("user_id");
+
+    if (subError || !usersWithPush || usersWithPush.length === 0) {
+      return { sent: 0, errors: subError ? [subError.message] : [] };
+    }
+
+    // Get unique user IDs
+    const uniqueUserIds = [...new Set(usersWithPush.map(s => s.user_id))];
+
+    // For each user, check if they have pending connection requests
+    for (const userId of uniqueUserIds) {
+      const { data: pendingRequests, error: pendingError } = await supabase
+        .from("connections")
+        .select("id")
+        .eq("following_id", userId)
+        .eq("status", "pending");
+
+      if (pendingError || !pendingRequests || pendingRequests.length === 0) {
+        continue;
+      }
+
+      try {
+        await sendPushNotification(userId, {
+          title: "Pending Connection Requests",
+          body: `You have ${pendingRequests.length} connection request${pendingRequests.length > 1 ? "s" : ""} waiting for your response`,
+          icon: "/icon-192.png",
+          badge: "/icon-192.png",
+          tag: "pending-connections-reminder",
+          requireInteraction: false,
+          data: {
+            type: "connection",
+            url: "/connections",
+          },
+          actions: [
+            { action: "view", title: "View Requests" },
+            { action: "dismiss", title: "Later" },
+          ],
+        });
+        sent++;
+      } catch (err: any) {
+        errors.push(`Failed to notify ${userId}: ${err.message}`);
+      }
+    }
+
+    return { sent, errors };
+  } catch (err: any) {
+    return { sent, errors: [err.message] };
+  }
+}
+
+// Send reminder notification for unread messages (DMs, groups, topics)
+export async function sendUnreadMessagesReminders(): Promise<{ sent: number; errors: string[] }> {
+  const errors: string[] = [];
+  let sent = 0;
+
+  try {
+    // Get all users who have push subscriptions
+    const { data: usersWithPush, error: subError } = await supabase
+      .from("push_subscriptions")
+      .select("user_id")
+      .order("user_id");
+
+    if (subError || !usersWithPush || usersWithPush.length === 0) {
+      return { sent: 0, errors: subError ? [subError.message] : [] };
+    }
+
+    // Get unique user IDs
+    const uniqueUserIds = [...new Set(usersWithPush.map(s => s.user_id))];
+
+    // For each user, check if they have unread messages
+    for (const userId of uniqueUserIds) {
+      let totalUnread = 0;
+      const unreadTypes: string[] = [];
+
+      // Check unread DMs (not muted)
+      const { data: dmSettings } = await supabase
+        .from("dm_settings")
+        .select("other_user_id, muted")
+        .eq("user_id", userId);
+
+      const mutedDmUsers = new Set(
+        (dmSettings || []).filter((s: any) => s.muted).map((s: any) => s.other_user_id)
+      );
+
+      const { data: unreadDms } = await supabase
+        .from("private_messages")
+        .select("id, sender_id")
+        .eq("receiver_id", userId)
+        .is("read_at", null);
+
+      const filteredDms = (unreadDms || []).filter((dm: any) => !mutedDmUsers.has(dm.sender_id));
+      if (filteredDms.length > 0) {
+        totalUnread += filteredDms.length;
+        unreadTypes.push("direct message");
+      }
+
+      // Check unread group messages (not muted)
+      const { data: groupMemberships } = await supabase
+        .from("group_chat_members")
+        .select("group_id, last_read_at, muted")
+        .eq("user_id", userId)
+        .eq("status", "accepted");
+
+      if (groupMemberships) {
+        for (const membership of groupMemberships) {
+          if (membership.muted) continue;
+
+          const { count } = await supabase
+            .from("group_messages")
+            .select("id", { count: "exact", head: true })
+            .eq("group_id", membership.group_id)
+            .neq("user_id", userId)
+            .is("deleted_at", null)
+            .gt("created_at", membership.last_read_at || "1970-01-01");
+
+          if (count && count > 0) {
+            totalUnread += count;
+            if (!unreadTypes.includes("group chat")) {
+              unreadTypes.push("group chat");
+            }
+          }
+        }
+      }
+
+      // Check unread topic messages (not muted)
+      const { data: topicSettings } = await supabase
+        .from("topic_settings")
+        .select("topic_id, muted")
+        .eq("user_id", userId);
+
+      const mutedTopics = new Set(
+        (topicSettings || []).filter((s: any) => s.muted).map((s: any) => s.topic_id)
+      );
+
+      const { data: topicReadStatus } = await supabase
+        .from("topic_read_status")
+        .select("topic_id, last_read_at")
+        .eq("user_id", userId);
+
+      const readStatusMap: Record<string, string> = {};
+      for (const status of topicReadStatus || []) {
+        readStatusMap[status.topic_id] = status.last_read_at;
+      }
+
+      const { data: topics } = await supabase.from("topics").select("id");
+
+      if (topics) {
+        for (const topic of topics) {
+          if (mutedTopics.has(topic.id)) continue;
+
+          const lastRead = readStatusMap[topic.id] || "1970-01-01";
+          const { count } = await supabase
+            .from("messages")
+            .select("id", { count: "exact", head: true })
+            .eq("topic_id", topic.id)
+            .neq("user_id", userId)
+            .is("deleted_at", null)
+            .gt("created_at", lastRead);
+
+          if (count && count > 0) {
+            totalUnread += count;
+            if (!unreadTypes.includes("topic")) {
+              unreadTypes.push("topic");
+            }
+          }
+        }
+      }
+
+      // Only send notification if there are unread messages
+      if (totalUnread > 0) {
+        const typeStr = unreadTypes.length > 1
+          ? unreadTypes.slice(0, -1).join(", ") + " and " + unreadTypes[unreadTypes.length - 1]
+          : unreadTypes[0];
+
+        try {
+          await sendPushNotification(userId, {
+            title: "Unread Messages",
+            body: `You have ${totalUnread} unread ${typeStr} message${totalUnread > 1 ? "s" : ""}`,
+            icon: "/icon-192.png",
+            badge: "/icon-192.png",
+            tag: "unread-messages-reminder",
+            requireInteraction: false,
+            data: {
+              type: "chat",
+              url: "/chat",
+            },
+            actions: [
+              { action: "view", title: "View Messages" },
+              { action: "dismiss", title: "Later" },
+            ],
+          });
+          sent++;
+        } catch (err: any) {
+          errors.push(`Failed to notify ${userId}: ${err.message}`);
+        }
+      }
+    }
+
+    return { sent, errors };
+  } catch (err: any) {
+    return { sent, errors: [err.message] };
+  }
+}
