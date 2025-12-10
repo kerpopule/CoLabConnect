@@ -1,16 +1,30 @@
-import { Plus, GripVertical } from "lucide-react";
+import { Plus, GripVertical, BellOff } from "lucide-react";
 import { useRef, useCallback, useState, useEffect } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+// Helper to get initials from name
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 interface TileItem {
   id: string;
   emoji?: string | string[];
+  avatarUrl?: string; // For DM tiles - shows avatar instead of emoji
+  avatarFallback?: string; // Fallback text for avatar (e.g., initials)
   name: string;
-  subtitle?: string; // Small text under the name (e.g., member names)
+  subtitle?: string; // Small text under the name (e.g., member names or role)
   unreadCount?: number;
   isPending?: boolean;
   isCreate?: boolean;
   isAdmin?: boolean;
   isWide?: boolean; // Spans 2 columns on mobile
+  isMuted?: boolean; // Shows muted indicator overlay
   displayOrder?: number;
 }
 
@@ -431,23 +445,38 @@ function TileButton({
           item.isWide ? "aspect-[2/1] sm:aspect-square" : "aspect-square"
         }`}
       >
-        {/* Emoji Display */}
-        <div className={item.isWide ? "text-4xl sm:text-4xl" : "text-3xl sm:text-4xl"}>
-          {Array.isArray(item.emoji)
-            ? item.emoji.join("")
-            : item.emoji || "💬"}
-        </div>
+        {/* Avatar Display (for DMs) or Emoji Display */}
+        {item.avatarUrl !== undefined ? (
+          <Avatar className={item.isWide ? "h-12 w-12 sm:h-14 sm:w-14" : "h-10 w-10 sm:h-12 sm:w-12"}>
+            <AvatarImage src={item.avatarUrl || undefined} alt={item.name} />
+            <AvatarFallback className="text-sm sm:text-base font-medium">
+              {item.avatarFallback || getInitials(item.name)}
+            </AvatarFallback>
+          </Avatar>
+        ) : (
+          <div className={item.isWide ? "text-4xl sm:text-4xl" : "text-3xl sm:text-4xl"}>
+            {Array.isArray(item.emoji)
+              ? item.emoji.join("")
+              : item.emoji || "💬"}
+          </div>
+        )}
         {/* Title/Name */}
         {item.name && (
           <span className={`font-medium text-center px-1 line-clamp-1 ${item.isWide ? "text-base" : "text-sm"}`}>
             {item.name}
           </span>
         )}
-        {/* Subtitle - member names */}
+        {/* Subtitle - member names or role */}
         {item.subtitle && (
           <span className="text-[10px] text-muted-foreground text-center px-1 line-clamp-1">
             {item.subtitle}
           </span>
+        )}
+        {/* Muted Indicator - top left corner */}
+        {item.isMuted && (
+          <div className="absolute top-1.5 left-1.5 p-1 rounded-full bg-muted/80">
+            <BellOff className="h-3 w-3 text-muted-foreground" />
+          </div>
         )}
         {/* Unread Badge - inside tile, bottom right */}
         {typeof item.unreadCount === "number" && item.unreadCount > 0 && (

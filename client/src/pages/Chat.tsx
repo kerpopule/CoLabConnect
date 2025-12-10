@@ -19,7 +19,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ChatTileGrid from "@/components/ChatTileGrid";
 import GroupCreateModal from "@/components/GroupCreateModal";
-import ConnectionsList from "@/components/ConnectionsList";
 
 type AIMessage = {
   id: string;
@@ -132,6 +131,14 @@ export default function Chat() {
   const [isReorderingGroups, setIsReorderingGroups] = useState(false);
   const [pendingGroupOrder, setPendingGroupOrder] = useState<{ id: string; displayOrder: number }[]>([]);
 
+  // Context menu state for mute/settings
+  const [contextMenu, setContextMenu] = useState<{
+    type: "dm" | "topic" | "group";
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
   // Image/file upload state (for previewing before send)
   const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([]);
   const [pendingFiles, setPendingFiles] = useState<{ file: File; fileName: string }[]>([]);
@@ -185,6 +192,56 @@ export default function Chat() {
     enabled: !!user,
   });
 
+  // Fetch DM mute settings
+  const { data: dmSettings = {} } = useQuery({
+    queryKey: ["dm-settings", user?.id],
+    queryFn: async () => {
+      if (!user) return {};
+      const { data, error } = await supabase
+        .from("dm_settings")
+        .select("other_user_id, muted, notifications_enabled")
+        .eq("user_id", user.id);
+      if (error) {
+        console.error("Error fetching DM settings:", error);
+        return {};
+      }
+      const settings: Record<string, { muted: boolean; notifications_enabled: boolean }> = {};
+      for (const row of data || []) {
+        settings[row.other_user_id] = {
+          muted: row.muted,
+          notifications_enabled: row.notifications_enabled,
+        };
+      }
+      return settings;
+    },
+    enabled: !!user,
+  });
+
+  // Fetch Topic mute settings
+  const { data: topicSettings = {} } = useQuery({
+    queryKey: ["topic-settings", user?.id],
+    queryFn: async () => {
+      if (!user) return {};
+      const { data, error } = await supabase
+        .from("topic_settings")
+        .select("topic_id, muted, notifications_enabled")
+        .eq("user_id", user.id);
+      if (error) {
+        console.error("Error fetching topic settings:", error);
+        return {};
+      }
+      const settings: Record<string, { muted: boolean; notifications_enabled: boolean }> = {};
+      for (const row of data || []) {
+        settings[row.topic_id] = {
+          muted: row.muted,
+          notifications_enabled: row.notifications_enabled,
+        };
+      }
+      return settings;
+    },
+    enabled: !!user,
+  });
+
   // Mute a user
   const handleMuteUser = async (mutedUserId: string) => {
     if (!user) return;
@@ -229,6 +286,89 @@ export default function Chat() {
       title: "User unmuted",
       description: "You'll see their messages again.",
     });
+  };
+
+  // Mute/unmute DM chat
+  const handleMuteDm = async (otherUserId: string, mute: boolean) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("dm_settings")
+      .upsert({
+        user_id: user.id,
+        other_user_id: otherUserId,
+        muted: mute,
+        notifications_enabled: !mute, // Muting also disables notifications
+      }, { onConflict: "user_id,other_user_id" });
+    if (error) {
+      console.error("Error updating DM settings:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update settings",
+        description: "Please try again.",
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["dm-settings", user.id] });
+    queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
+    toast({
+      title: mute ? "Conversation muted" : "Conversation unmuted",
+      description: mute ? "You won't receive badges or notifications." : "Badges and notifications restored.",
+    });
+    setContextMenu(null);
+  };
+
+  // Mute/unmute Topic
+  const handleMuteTopic = async (topicId: string, mute: boolean) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("topic_settings")
+      .upsert({
+        user_id: user.id,
+        topic_id: topicId,
+        muted: mute,
+        notifications_enabled: !mute,
+      }, { onConflict: "user_id,topic_id" });
+    if (error) {
+      console.error("Error updating topic settings:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update settings",
+        description: "Please try again.",
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["topic-settings", user.id] });
+    queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+    toast({
+      title: mute ? "Topic muted" : "Topic unmuted",
+      description: mute ? "You won't receive badges or notifications." : "Badges and notifications restored.",
+    });
+    setContextMenu(null);
+  };
+
+  // Mute/unmute Group
+  const handleMuteGroup = async (groupId: string, mute: boolean) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("group_chat_members")
+      .update({ muted: mute, notifications_enabled: !mute })
+      .eq("group_id", groupId)
+      .eq("user_id", user.id);
+    if (error) {
+      console.error("Error updating group settings:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update settings",
+        description: "Please try again.",
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["user-groups", user.id] });
+    toast({
+      title: mute ? "Group muted" : "Group unmuted",
+      description: mute ? "You won't receive badges or notifications." : "Badges and notifications restored.",
+    });
+    setContextMenu(null);
   };
 
   // Reply to a user - adds @mention to input
@@ -1195,6 +1335,7 @@ export default function Chat() {
             membership_status: membership.status,
             membership_role: membership.role,
             notifications_enabled: membership.notifications_enabled ?? true,
+            muted: membership.muted ?? false,
             display_order: membership.display_order ?? 0,
             unread_count: unreadCount,
             latest_message_at: latestMsg?.created_at || group.created_at,
@@ -3078,6 +3219,28 @@ export default function Chat() {
     markMessagesAsRead(userId);
   };
 
+  // Handle DM long press - opens context menu for mute option
+  const handleDmLongPress = useCallback((userId: string) => {
+    // Position at center of screen for mobile
+    setContextMenu({
+      type: "dm",
+      id: userId,
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+  }, []);
+
+  // Handle Topic long press - opens context menu for mute option (non-admin users)
+  const handleTopicLongPressForMute = useCallback((topicId: string) => {
+    if (isGeneralTopicAdmin) return; // Admin uses different long-press action
+    setContextMenu({
+      type: "topic",
+      id: topicId,
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+  }, [isGeneralTopicAdmin]);
+
   // Handle group selection
   const handleSelectGroup = (groupId: string) => {
     setActiveGroup(groupId);
@@ -3431,7 +3594,8 @@ export default function Chat() {
                     emoji: g.emojis,
                     name: g.name || "", // Show title if set, otherwise empty (just emojis)
                     subtitle: getGroupMemberNames(g), // Always show member names below
-                    unreadCount: g.unread_count,
+                    unreadCount: g.muted ? 0 : g.unread_count,
+                    isMuted: g.muted || false,
                     isAdmin: g.membership_role === "admin",
                     displayOrder: g.display_order,
                   }))}
@@ -3495,11 +3659,12 @@ export default function Chat() {
                   id: t.id,
                   emoji: t.icon || "💬",
                   name: t.name,
-                  unreadCount: topicUnreadCounts?.[t.id] || 0,
+                  unreadCount: topicSettings[t.id]?.muted ? 0 : (topicUnreadCounts?.[t.id] || 0),
+                  isMuted: topicSettings[t.id]?.muted || false,
                   displayOrder: t.display_order,
                 }))}
                 onSelect={isReorderingTopics ? () => {} : handleSelectTopic}
-                onLongPress={isGeneralTopicAdmin && !isReorderingTopics ? handleTopicLongPress : undefined}
+                onLongPress={isReorderingTopics ? undefined : (isGeneralTopicAdmin ? handleTopicLongPress : handleTopicLongPressForMute)}
                 showCreate={isGeneralTopicAdmin && !isReorderingTopics}
                 onCreateClick={() => setShowCreateTopic(true)}
                 isReordering={isReorderingTopics}
@@ -3509,13 +3674,74 @@ export default function Chat() {
               />
             )}
 
-            {/* DMs List */}
+            {/* DMs List - As Tiles */}
             {activeTab === "dms" && (
-              <ConnectionsList
-                activeChats={dmsWithHistory?.active || []}
-                connections={dmsWithHistory?.connections || []}
-                onMessageClick={handleSelectDm}
-              />
+              <div className="space-y-4">
+                {/* Active Chats Section */}
+                {(dmsWithHistory?.active || []).length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide px-4 py-2">
+                      Active Chats
+                    </h2>
+                    <ChatTileGrid
+                      items={(dmsWithHistory?.active || []).map((chat) => ({
+                        id: chat.profile.id,
+                        avatarUrl: chat.profile.avatar_url || "",
+                        avatarFallback: chat.profile.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .toUpperCase()
+                          .slice(0, 2),
+                        name: chat.profile.name,
+                        subtitle: chat.profile.role || "Member",
+                        unreadCount: dmSettings[chat.profile.id]?.muted ? 0 : (chat.unreadCount || 0),
+                        isMuted: dmSettings[chat.profile.id]?.muted || false,
+                      }))}
+                      onSelect={handleSelectDm}
+                      onLongPress={handleDmLongPress}
+                    />
+                  </div>
+                )}
+
+                {/* Connections Section */}
+                {(dmsWithHistory?.connections || []).length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide px-4 py-2">
+                      Connections
+                    </h2>
+                    <ChatTileGrid
+                      items={(dmsWithHistory?.connections || []).map((conn) => ({
+                        id: conn.profile.id,
+                        avatarUrl: conn.profile.avatar_url || "",
+                        avatarFallback: conn.profile.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .toUpperCase()
+                          .slice(0, 2),
+                        name: conn.profile.name,
+                        subtitle: conn.profile.role || "Member",
+                        unreadCount: dmSettings[conn.profile.id]?.muted ? 0 : (conn.unreadCount || 0),
+                        isMuted: dmSettings[conn.profile.id]?.muted || false,
+                      }))}
+                      onSelect={handleSelectDm}
+                      onLongPress={handleDmLongPress}
+                    />
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {(dmsWithHistory?.active || []).length === 0 && (dmsWithHistory?.connections || []).length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                    <MessageCircle className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                    <h3 className="font-semibold text-lg mb-2">No connections yet</h3>
+                    <p className="text-muted-foreground text-sm max-w-xs">
+                      Connect with members in the Directory to start private conversations
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -4130,6 +4356,16 @@ export default function Chat() {
             </div>
             <div className="p-4 space-y-2">
               <button
+                onClick={() => {
+                  handleMuteGroup(activeGroupData.id, !activeGroupData.muted);
+                  setShowGroupActions(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
+              >
+                {activeGroupData.muted ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+                {activeGroupData.muted ? "Unmute Chat" : "Mute Chat"}
+              </button>
+              <button
                 onClick={startReorderingGroups}
                 className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
               >
@@ -4535,6 +4771,59 @@ export default function Chat() {
                   Kick
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Context Menu for DM/Topic Mute */}
+      {contextMenu && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setContextMenu(null)}
+          />
+          <div className="relative bg-background rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="p-4 text-center border-b">
+              <h2 className="text-lg font-semibold">
+                {contextMenu.type === "dm" ? "Conversation Settings" : "Topic Settings"}
+              </h2>
+            </div>
+            <div className="p-4 space-y-2">
+              {contextMenu.type === "dm" && (
+                <>
+                  <button
+                    onClick={() => handleMuteDm(contextMenu.id, !dmSettings[contextMenu.id]?.muted)}
+                    className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
+                  >
+                    {dmSettings[contextMenu.id]?.muted ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+                    {dmSettings[contextMenu.id]?.muted ? "Unmute Conversation" : "Mute Conversation"}
+                  </button>
+                  <Link href={`/profile/${contextMenu.id}`} onClick={() => setContextMenu(null)}>
+                    <button className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground">
+                      <Users className="h-5 w-5" />
+                      View Profile
+                    </button>
+                  </Link>
+                </>
+              )}
+              {contextMenu.type === "topic" && (
+                <button
+                  onClick={() => handleMuteTopic(contextMenu.id, !topicSettings[contextMenu.id]?.muted)}
+                  className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
+                >
+                  {topicSettings[contextMenu.id]?.muted ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+                  {topicSettings[contextMenu.id]?.muted ? "Unmute Topic" : "Mute Topic"}
+                </button>
+              )}
+            </div>
+            <div className="p-4 border-t">
+              <button
+                onClick={() => setContextMenu(null)}
+                className="w-full p-3 rounded-xl border border-border hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

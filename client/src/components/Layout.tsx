@@ -60,35 +60,58 @@ export function Layout({ children }: { children: React.ReactNode }) {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Fetch unread private messages count (DMs)
+  // Fetch DM mute settings for filtering
+  const { data: dmMuteSettings = {} } = useQuery({
+    queryKey: ["dm-mute-settings", user?.id],
+    queryFn: async () => {
+      if (!user) return {};
+      const { data, error } = await supabase
+        .from("dm_settings")
+        .select("other_user_id, muted")
+        .eq("user_id", user.id);
+      if (error) return {};
+      const settings: Record<string, boolean> = {};
+      for (const row of data || []) {
+        settings[row.other_user_id] = row.muted;
+      }
+      return settings;
+    },
+    enabled: !!user,
+  });
+
+  // Fetch unread private messages count (DMs) - excludes muted conversations
   const { data: unreadDmCount = 0 } = useQuery({
-    queryKey: ["unread-messages-count", user?.id],
+    queryKey: ["unread-messages-count", user?.id, dmMuteSettings],
     queryFn: async () => {
       if (!user) return 0;
 
-      const { count, error } = await supabase
+      // Get all unread messages grouped by sender
+      const { data, error } = await supabase
         .from("private_messages")
-        .select("*", { count: "exact", head: true })
+        .select("sender_id")
         .eq("receiver_id", user.id)
         .is("read_at", null);
 
-      if (error) return 0;
-      return count || 0;
+      if (error || !data) return 0;
+
+      // Filter out messages from muted senders
+      const unmutedMessages = data.filter(msg => !dmMuteSettings[msg.sender_id]);
+      return unmutedMessages.length;
     },
     enabled: !!user,
     refetchInterval: 15000, // Refresh every 15 seconds
   });
 
-  // Fetch unread group messages count + pending invites
+  // Fetch unread group messages count + pending invites (excludes muted groups)
   const { data: unreadGroupCount = 0 } = useQuery({
     queryKey: ["unread-group-count", user?.id],
     queryFn: async () => {
       if (!user) return 0;
 
-      // Get user's group memberships
+      // Get user's group memberships (includes muted status)
       const { data: memberships, error: memberError } = await supabase
         .from("group_chat_members")
-        .select("group_id, status, last_read_at")
+        .select("group_id, status, last_read_at, muted")
         .eq("user_id", user.id);
 
       if (memberError || !memberships) return 0;
@@ -96,6 +119,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       let totalUnread = 0;
 
       for (const membership of memberships) {
+        // Skip muted groups
+        if (membership.muted) continue;
+
         if (membership.status === "pending") {
           // Pending invites count as 1 unread each
           totalUnread += 1;
@@ -123,7 +149,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Fetch unread topic messages count (General channels)
+  // Fetch unread topic messages count (General channels) - excludes muted topics
   const { data: unreadTopicCount = 0 } = useQuery({
     queryKey: ["unread-topic-count", user?.id],
     queryFn: async () => {
@@ -147,9 +173,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
         readStatusMap[rs.topic_id] = rs.last_read_at;
       }
 
+      // Get user's topic mute settings
+      const { data: topicMuteData } = await supabase
+        .from("topic_settings")
+        .select("topic_id, muted")
+        .eq("user_id", user.id);
+
+      const topicMuteMap: Record<string, boolean> = {};
+      for (const ts of topicMuteData || []) {
+        topicMuteMap[ts.topic_id] = ts.muted;
+      }
+
       let totalUnread = 0;
 
       for (const topic of topics) {
+        // Skip muted topics
+        if (topicMuteMap[topic.id]) continue;
+
         const lastRead = readStatusMap[topic.id];
 
         let query = supabase

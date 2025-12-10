@@ -110,6 +110,19 @@ export async function notifyNewDM(
   senderName: string,
   messagePreview: string
 ): Promise<void> {
+  // Check if conversation is muted by receiver
+  const { data: dmSettings } = await supabase
+    .from("dm_settings")
+    .select("muted")
+    .eq("user_id", receiverId)
+    .eq("other_user_id", senderId)
+    .single();
+
+  // If conversation is muted, don't send notification
+  if (dmSettings?.muted) {
+    return;
+  }
+
   // Check if user has DM notifications enabled
   const { data: prefs } = await supabase
     .from("notification_preferences")
@@ -199,8 +212,32 @@ export async function notifyFollowedChat(
     return;
   }
 
-  // Send notifications to all followers
-  const sendPromises = followers.map((follower: { user_id: string }) =>
+  // Get topic mute settings for all followers
+  const followerIds = followers.map((f: { user_id: string }) => f.user_id);
+  const { data: topicMuteSettings } = await supabase
+    .from("topic_settings")
+    .select("user_id, muted")
+    .eq("topic_id", topicId)
+    .in("user_id", followerIds);
+
+  // Create a set of muted user IDs for fast lookup
+  const mutedUserIds = new Set(
+    (topicMuteSettings || [])
+      .filter((s: { user_id: string; muted: boolean }) => s.muted)
+      .map((s: { user_id: string }) => s.user_id)
+  );
+
+  // Filter out muted users
+  const notifiableFollowers = followers.filter(
+    (f: { user_id: string }) => !mutedUserIds.has(f.user_id)
+  );
+
+  if (notifiableFollowers.length === 0) {
+    return;
+  }
+
+  // Send notifications to non-muted followers
+  const sendPromises = notifiableFollowers.map((follower: { user_id: string }) =>
     sendPushNotification(follower.user_id, {
       title: `New message in #${topicName}`,
       body: `${senderName}: ${messagePreview.length > 80 ? messagePreview.slice(0, 77) + "..." : messagePreview}`,
@@ -332,10 +369,10 @@ export async function notifyGroupMessage(
   senderName: string,
   messagePreview: string
 ): Promise<void> {
-  // Get all accepted members of this group who have notifications enabled (except the sender)
+  // Get all accepted members of this group (except the sender) with muted and notifications settings
   const { data: members, error } = await supabase
     .from("group_chat_members")
-    .select("user_id, notifications_enabled")
+    .select("user_id, notifications_enabled, muted")
     .eq("group_id", groupId)
     .eq("status", "accepted")
     .neq("user_id", senderId);
@@ -344,17 +381,17 @@ export async function notifyGroupMessage(
     return;
   }
 
-  // Filter to only members with notifications enabled (default to true if not set)
+  // Filter to only members who are NOT muted AND have notifications enabled (default to true if not set)
   const notifiableMembers = members.filter(
-    (member: { user_id: string; notifications_enabled: boolean | null }) =>
-      member.notifications_enabled !== false
+    (member: { user_id: string; notifications_enabled: boolean | null; muted: boolean | null }) =>
+      !member.muted && member.notifications_enabled !== false
   );
 
   if (notifiableMembers.length === 0) {
     return;
   }
 
-  // Send notifications to members with notifications enabled
+  // Send notifications to eligible members
   const sendPromises = notifiableMembers.map((member: { user_id: string }) =>
     sendPushNotification(member.user_id, {
       title: `New message in ${groupName}`,
@@ -453,7 +490,7 @@ export async function notifyGroupRename(
   // Get all accepted members of this group (except the admin who renamed it)
   const { data: members, error } = await supabase
     .from("group_chat_members")
-    .select("user_id, notifications_enabled")
+    .select("user_id, notifications_enabled, muted")
     .eq("group_id", groupId)
     .eq("status", "accepted")
     .neq("user_id", adminId);
@@ -462,10 +499,10 @@ export async function notifyGroupRename(
     return;
   }
 
-  // Filter to only members with notifications enabled
+  // Filter to only members who are NOT muted AND have notifications enabled
   const notifiableMembers = members.filter(
-    (member: { user_id: string; notifications_enabled: boolean | null }) =>
-      member.notifications_enabled !== false
+    (member: { user_id: string; notifications_enabled: boolean | null; muted: boolean | null }) =>
+      !member.muted && member.notifications_enabled !== false
   );
 
   if (notifiableMembers.length === 0) {
@@ -499,10 +536,10 @@ export async function notifyGroupMemberJoined(
   joinedUserId: string,
   joinedUserName: string
 ): Promise<void> {
-  // Get all accepted members of this group (except the user who joined)
+  // Get all accepted members of this group (except the user who joined) with muted and notifications settings
   const { data: members, error } = await supabase
     .from("group_chat_members")
-    .select("user_id, notifications_enabled")
+    .select("user_id, notifications_enabled, muted")
     .eq("group_id", groupId)
     .eq("status", "accepted")
     .neq("user_id", joinedUserId);
@@ -511,10 +548,10 @@ export async function notifyGroupMemberJoined(
     return;
   }
 
-  // Filter to only members with notifications enabled
+  // Filter to only members who are NOT muted AND have notifications enabled
   const notifiableMembers = members.filter(
-    (member: { user_id: string; notifications_enabled: boolean | null }) =>
-      member.notifications_enabled !== false
+    (member: { user_id: string; notifications_enabled: boolean | null; muted: boolean | null }) =>
+      !member.muted && member.notifications_enabled !== false
   );
 
   if (notifiableMembers.length === 0) {
