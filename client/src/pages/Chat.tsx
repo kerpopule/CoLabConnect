@@ -1025,8 +1025,8 @@ export default function Chat() {
       if (error) throw error;
       return data as Topic[];
     },
-    staleTime: Infinity,
-    gcTime: Infinity,
+    staleTime: 60000, // Consider stale after 1 minute (allows real-time invalidation to work)
+    gcTime: 300000, // Keep in cache for 5 minutes
   });
 
   // Fetch unread counts for topics (depends on topicReadStatus being loaded)
@@ -1648,6 +1648,57 @@ export default function Chat() {
           // When read status changes on another device, update local state
           queryClient.invalidateQueries({ queryKey: ["topic-read-status", user.id] });
           queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient]);
+
+  // Real-time subscription for topics table changes (admin adds/renames/deletes topics)
+  useEffect(() => {
+    const channel = supabase
+      .channel("topics-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "topics",
+        },
+        () => {
+          // Refetch topics when admin makes changes
+          queryClient.invalidateQueries({ queryKey: ["topics"] });
+          if (user) {
+            queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient, user]);
+
+  // Real-time subscription for group_chats table changes (name/emoji changes)
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`group-chats-changes:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_chats",
+        },
+        () => {
+          // Refetch group chats when any group is updated (name, emoji, etc.)
+          queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
         }
       )
       .subscribe();

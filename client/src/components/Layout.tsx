@@ -287,6 +287,40 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )
       .subscribe();
 
+    // Subscribe to topics table changes (admin adds/renames/deletes topics)
+    const topicsChannel = supabase
+      .channel("layout-topics-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "topics",
+        },
+        () => {
+          // Refetch topic unread count when topics change
+          queryClient.invalidateQueries({ queryKey: ["unread-topic-count", user.id] });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to group_chats table changes (name/emoji changes)
+    const groupChatsChannel = supabase
+      .channel(`layout-group-chats:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_chats",
+        },
+        () => {
+          // Refetch group unread count when groups change
+          queryClient.invalidateQueries({ queryKey: ["unread-group-count", user.id] });
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(connectionsChannel);
       supabase.removeChannel(messagesChannel);
@@ -294,6 +328,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(groupMembersChannel);
       supabase.removeChannel(topicMessagesChannel);
       supabase.removeChannel(topicReadStatusChannel);
+      supabase.removeChannel(topicsChannel);
+      supabase.removeChannel(groupChatsChannel);
     };
   }, [user, queryClient]);
 
