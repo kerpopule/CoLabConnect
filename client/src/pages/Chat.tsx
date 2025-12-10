@@ -363,6 +363,8 @@ export default function Chat() {
       });
       return;
     }
+    // Invalidate all related queries to update UI immediately
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
     queryClient.invalidateQueries({ queryKey: ["user-groups", user.id] });
     toast({
       title: mute ? "Group muted" : "Group unmuted",
@@ -4111,7 +4113,7 @@ export default function Chat() {
                       isGroupChat
                         ? (isGroupNotificationsEnabled ? "text-primary" : "text-muted-foreground")
                         : isPrivateChat
-                        ? (hasNotificationsEnabled ? "text-primary" : "text-muted-foreground")
+                        ? (activeDm && !dmSettings[activeDm]?.muted ? "text-primary" : "text-muted-foreground")
                         : (isFollowingTopic ? "text-primary" : "text-muted-foreground")
                     }`}
                     onClick={() => {
@@ -4123,11 +4125,16 @@ export default function Chat() {
                         } else {
                           handleToggleGroupNotifications();
                         }
-                      } else if (isPrivateChat) {
+                      } else if (isPrivateChat && activeDm) {
+                        // For DMs, toggle the mute status for this specific conversation
                         if (!hasNotificationsEnabled) {
+                          // First need to enable push notifications globally
                           setShowDmPrompt(true);
+                        } else {
+                          // Toggle mute status for this DM
+                          const currentMuted = dmSettings[activeDm]?.muted || false;
+                          handleMuteDm(activeDm, !currentMuted);
                         }
-                        // DMs don't have individual toggles, just global push
                       } else {
                         // Topic notifications
                         if (!hasNotificationsEnabled) {
@@ -4142,7 +4149,7 @@ export default function Chat() {
                       isGroupChat
                         ? (isGroupNotificationsEnabled ? "Mute group notifications" : "Enable group notifications")
                         : isPrivateChat
-                        ? (hasNotificationsEnabled ? "Notifications enabled" : "Enable notifications")
+                        ? (activeDm && !dmSettings[activeDm]?.muted ? "Mute conversation" : "Unmute conversation")
                         : (isFollowingTopic ? "Disable notifications for this channel" : "Enable notifications for this channel")
                     }
                   >
@@ -4151,7 +4158,7 @@ export default function Chat() {
                     ) : isGroupChat ? (
                       isGroupNotificationsEnabled ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
                     ) : isPrivateChat ? (
-                      hasNotificationsEnabled ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
+                      (activeDm && !dmSettings[activeDm]?.muted) ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
                     ) : (
                       isFollowingTopic ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
                     )}
