@@ -60,8 +60,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Fetch unread private messages count
-  const { data: unreadMessagesCount = 0 } = useQuery({
+  // Fetch unread private messages count (DMs)
+  const { data: unreadDmCount = 0 } = useQuery({
     queryKey: ["unread-messages-count", user?.id],
     queryFn: async () => {
       if (!user) return 0;
@@ -78,6 +78,102 @@ export function Layout({ children }: { children: React.ReactNode }) {
     enabled: !!user,
     refetchInterval: 15000, // Refresh every 15 seconds
   });
+
+  // Fetch unread group messages count + pending invites
+  const { data: unreadGroupCount = 0 } = useQuery({
+    queryKey: ["unread-group-count", user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+
+      // Get user's group memberships
+      const { data: memberships, error: memberError } = await supabase
+        .from("group_chat_members")
+        .select("group_id, status, last_read_at")
+        .eq("user_id", user.id);
+
+      if (memberError || !memberships) return 0;
+
+      let totalUnread = 0;
+
+      for (const membership of memberships) {
+        if (membership.status === "pending") {
+          // Pending invites count as 1 unread each
+          totalUnread += 1;
+        } else if (membership.status === "accepted") {
+          // Count unread messages in accepted groups
+          let query = supabase
+            .from("group_messages")
+            .select("*", { count: "exact", head: true })
+            .eq("group_id", membership.group_id)
+            .neq("user_id", user.id)
+            .is("deleted_at", null);
+
+          if (membership.last_read_at) {
+            query = query.gt("created_at", membership.last_read_at);
+          }
+
+          const { count } = await query;
+          totalUnread += count || 0;
+        }
+      }
+
+      return totalUnread;
+    },
+    enabled: !!user,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  // Fetch unread topic messages count (General channels)
+  const { data: unreadTopicCount = 0 } = useQuery({
+    queryKey: ["unread-topic-count", user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+
+      // Get all topics
+      const { data: topics, error: topicsError } = await supabase
+        .from("topics")
+        .select("id");
+
+      if (topicsError || !topics) return 0;
+
+      // Get user's topic read status
+      const { data: readStatus } = await supabase
+        .from("topic_read_status")
+        .select("topic_id, last_read_at")
+        .eq("user_id", user.id);
+
+      const readStatusMap: Record<string, string> = {};
+      for (const rs of readStatus || []) {
+        readStatusMap[rs.topic_id] = rs.last_read_at;
+      }
+
+      let totalUnread = 0;
+
+      for (const topic of topics) {
+        const lastRead = readStatusMap[topic.id];
+
+        let query = supabase
+          .from("messages")
+          .select("*", { count: "exact", head: true })
+          .eq("topic_id", topic.id)
+          .neq("user_id", user.id);
+
+        if (lastRead) {
+          query = query.gt("created_at", lastRead);
+        }
+
+        const { count } = await query;
+        totalUnread += count || 0;
+      }
+
+      return totalUnread;
+    },
+    enabled: !!user,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  // Combined chat unread count
+  const totalChatUnread = unreadDmCount + unreadGroupCount + unreadTopicCount;
 
   // Real-time subscription for badge counts
   useEffect(() => {
@@ -101,7 +197,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )
       .subscribe();
 
-    // Subscribe to private message changes for unread badge
+    // Subscribe to private message changes for unread DM badge
     const messagesChannel = supabase
       .channel(`layout-messages:${user.id}`)
       .on(
@@ -119,9 +215,85 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )
       .subscribe();
 
+    // Subscribe to group message changes for unread group badge
+    const groupMessagesChannel = supabase
+      .channel(`layout-group-messages:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_messages",
+        },
+        (payload) => {
+          // Only update if not own message
+          if ((payload.new as any).user_id !== user.id) {
+            queryClient.invalidateQueries({ queryKey: ["unread-group-count", user.id] });
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to group membership changes (invites, accept/decline)
+    const groupMembersChannel = supabase
+      .channel(`layout-group-members:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_chat_members",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["unread-group-count", user.id] });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to topic message changes for unread topic badge
+    const topicMessagesChannel = supabase
+      .channel(`layout-topic-messages:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          // Only update if not own message
+          if ((payload.new as any).user_id !== user.id) {
+            queryClient.invalidateQueries({ queryKey: ["unread-topic-count", user.id] });
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to topic read status changes (cross-device sync)
+    const topicReadStatusChannel = supabase
+      .channel(`layout-topic-read:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "topic_read_status",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["unread-topic-count", user.id] });
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(connectionsChannel);
       supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(groupMessagesChannel);
+      supabase.removeChannel(groupMembersChannel);
+      supabase.removeChannel(topicMessagesChannel);
+      supabase.removeChannel(topicReadStatusChannel);
     };
   }, [user, queryClient]);
 
@@ -288,7 +460,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: user ? "/my-profile" : "/login", icon: User, label: "Profile", badge: 0 },
     { href: "/directory", icon: Users, label: "Directory", badge: 0 },
     { href: "/connections", icon: UserCheck, label: "Connections", badge: pendingRequestsCount },
-    { href: "/chat", icon: MessageCircle, label: "Chat", badge: unreadMessagesCount },
+    { href: "/chat", icon: MessageCircle, label: "Chat", badge: totalChatUnread },
   ];
 
   // Mobile nav items (Profile instead of Home)
@@ -296,7 +468,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: user ? "/my-profile" : "/login", icon: User, label: "Profile", badge: 0 },
     { href: "/directory", icon: Users, label: "Directory", badge: 0 },
     { href: "/connections", icon: UserCheck, label: "Connections", badge: pendingRequestsCount },
-    { href: "/chat", icon: MessageCircle, label: "Chat", badge: unreadMessagesCount },
+    { href: "/chat", icon: MessageCircle, label: "Chat", badge: totalChatUnread },
   ];
 
   // Chat page needs fixed height to prevent outer scroll

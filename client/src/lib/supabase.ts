@@ -133,3 +133,12 @@ export type GroupChatWithUnread = GroupChat & {
   unread_count: number;
   latest_message_at: string | null;
 };
+
+// Topic read status for cross-device sync
+export type TopicReadStatus = {
+  id: string;
+  user_id: string;
+  topic_id: string;
+  last_read_at: string;
+  created_at: string;
+};

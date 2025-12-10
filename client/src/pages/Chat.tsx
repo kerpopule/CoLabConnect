@@ -935,19 +935,63 @@ export default function Chat() {
     }
   }, [user, queryClient]);
 
-  // Track topic last read timestamps in localStorage
-  const getTopicLastRead = useCallback((topicId: string): string | null => {
-    if (!user) return null;
-    const key = `topic_last_read_${user.id}_${topicId}`;
-    return localStorage.getItem(key);
-  }, [user]);
+  // Fetch topic read status from database for cross-device sync
+  const { data: topicReadStatus } = useQuery({
+    queryKey: ["topic-read-status", user?.id],
+    queryFn: async () => {
+      if (!user) return {};
+      const { data, error } = await supabase
+        .from("topic_read_status")
+        .select("topic_id, last_read_at")
+        .eq("user_id", user.id);
 
-  const markTopicAsRead = useCallback((topicId: string) => {
+      if (error) {
+        console.error("Error fetching topic read status:", error);
+        return {};
+      }
+
+      // Convert to a lookup object
+      const statusMap: Record<string, string> = {};
+      for (const row of data || []) {
+        statusMap[row.topic_id] = row.last_read_at;
+      }
+      return statusMap;
+    },
+    enabled: !!user,
+  });
+
+  // Get topic last read timestamp from database
+  const getTopicLastRead = useCallback((topicId: string): string | null => {
+    if (!user || !topicReadStatus) return null;
+    return topicReadStatus[topicId] || null;
+  }, [user, topicReadStatus]);
+
+  // Mark topic as read in database (upsert)
+  const markTopicAsRead = useCallback(async (topicId: string) => {
     if (!user) return;
-    const key = `topic_last_read_${user.id}_${topicId}`;
-    localStorage.setItem(key, new Date().toISOString());
+
+    const now = new Date().toISOString();
+
+    // Upsert the read status
+    const { error } = await supabase
+      .from("topic_read_status")
+      .upsert({
+        user_id: user.id,
+        topic_id: topicId,
+        last_read_at: now,
+      }, {
+        onConflict: "user_id,topic_id",
+      });
+
+    if (error) {
+      console.error("Error marking topic as read:", error);
+      return;
+    }
+
     // Invalidate and refetch to update badges immediately
+    queryClient.invalidateQueries({ queryKey: ["topic-read-status", user.id] });
     queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+    queryClient.refetchQueries({ queryKey: ["topic-read-status", user.id] });
     queryClient.refetchQueries({ queryKey: ["topic-unread-counts", user.id] });
   }, [user, queryClient]);
 
@@ -985,16 +1029,16 @@ export default function Chat() {
     gcTime: Infinity,
   });
 
-  // Fetch unread counts for topics
+  // Fetch unread counts for topics (depends on topicReadStatus being loaded)
   const { data: topicUnreadCounts } = useQuery({
-    queryKey: ["topic-unread-counts", user?.id],
+    queryKey: ["topic-unread-counts", user?.id, topicReadStatus],
     queryFn: async () => {
       if (!user || !topics) return {};
 
       const counts: Record<string, number> = {};
 
       for (const topic of topics) {
-        const lastRead = getTopicLastRead(topic.id);
+        const lastRead = topicReadStatus?.[topic.id] || null;
 
         // Build query for messages after last read, excluding own messages
         let query = supabase
@@ -1013,7 +1057,7 @@ export default function Chat() {
 
       return counts;
     },
-    enabled: !!user && !!topics && topics.length > 0,
+    enabled: !!user && !!topics && topics.length > 0 && topicReadStatus !== undefined,
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
@@ -1585,6 +1629,33 @@ export default function Chat() {
       supabase.removeChannel(channel);
     };
   }, [user, queryClient, activeTab, viewMode, activeTopic]);
+
+  // Real-time subscription for topic read status changes (cross-device sync)
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`topic-read-status:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "topic_read_status",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          // When read status changes on another device, update local state
+          queryClient.invalidateQueries({ queryKey: ["topic-read-status", user.id] });
+          queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient]);
 
   // Scroll handling
   const checkIfAtBottom = useCallback(() => {
