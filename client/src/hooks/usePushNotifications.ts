@@ -55,13 +55,17 @@ export function usePushNotifications() {
       });
   }, [isSupported]);
 
-  // Handle navigation from notification click
+  // Handle messages from service worker (navigation and updates)
   useEffect(() => {
     if (!isSupported) return;
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === "NAVIGATE" && event.data?.url) {
         window.location.href = event.data.url;
+      } else if (event.data?.type === "SW_UPDATED") {
+        console.log("[PWA] Service worker updated to version:", event.data.version);
+        // Reload the page to get the new version
+        window.location.reload();
       }
     };
 

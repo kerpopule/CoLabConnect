@@ -1,17 +1,58 @@
 // Co:Lab Connect Service Worker for Push Notifications
+// Version 66 - Force clear all caches to fix Android PWA errors
 
-const CACHE_NAME = 'colab-connect-v65';
+const CACHE_VERSION = 66;
+const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
-// Install event - cache essential files
+// Install event - immediately take over from old service worker
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+  console.log('[SW] Installing service worker v' + CACHE_VERSION);
+  // Force immediate activation, don't wait for old SW to die
   self.skipWaiting();
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up ALL old caches aggressively
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Service worker activated');
-  event.waitUntil(clients.claim());
+  console.log('[SW] Activating service worker v' + CACHE_VERSION);
+  event.waitUntil(
+    Promise.all([
+      // Delete ALL caches to force fresh content
+      caches.keys().then((cacheNames) => {
+        console.log('[SW] Found caches:', cacheNames);
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            console.log('[SW] Deleting cache:', cacheName);
+            return caches.delete(cacheName);
+          })
+        );
+      }),
+      // Take control of all clients immediately
+      clients.claim()
+    ]).then(() => {
+      console.log('[SW] All caches cleared, now controlling all clients');
+      // Notify all clients to refresh
+      return clients.matchAll({ type: 'window' }).then((windowClients) => {
+        windowClients.forEach((client) => {
+          client.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION });
+        });
+      });
+    })
+  );
+});
+
+// Fetch event - ALWAYS go to network, never serve from cache
+// This ensures users always get the latest version
+self.addEventListener('fetch', (event) => {
+  // Only handle navigation requests (HTML pages)
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        // If network fails, try to return cached version as fallback
+        return caches.match(event.request);
+      })
+    );
+  }
+  // For all other requests (JS, CSS, images), let browser handle normally
 });
 
 // Push notification event
