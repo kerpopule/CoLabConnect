@@ -16,7 +16,18 @@ import {
   LogIn,
   Phone,
   Download,
+  UserMinus,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Profile, Connection } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -38,6 +49,7 @@ export default function UserProfile() {
   const queryClient = useQueryClient();
   const [pendingConnect, setPendingConnect] = useState(false);
   const [hasQrAccess, setHasQrAccess] = useState(false);
+  const [showRemoveDialog, setShowRemoveDialog] = useState(false);
 
   // Handle QR code access - store allowed profile ID in sessionStorage
   useEffect(() => {
@@ -193,6 +205,49 @@ export default function UserProfile() {
       setPendingConnect(false);
     }
   }, [pendingConnect, user, id, connectionStatus, sendRequest]);
+
+  // Remove connection mutation
+  const removeConnection = useMutation({
+    mutationFn: async () => {
+      if (!user || !id) throw new Error("Missing user or profile ID");
+
+      // Delete the connection (works for both directions)
+      const { error: deleteError } = await supabase
+        .from("connections")
+        .delete()
+        .or(`and(follower_id.eq.${user.id},following_id.eq.${id}),and(follower_id.eq.${id},following_id.eq.${user.id})`);
+
+      if (deleteError) throw deleteError;
+
+      // Delete all DM messages between these two users
+      const { error: dmError } = await supabase
+        .from("private_messages")
+        .delete()
+        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`);
+
+      if (dmError) {
+        console.error("Error deleting DMs:", dmError);
+        // Don't throw - connection was already deleted
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["dms-with-history"] });
+      setShowRemoveDialog(false);
+      toast({
+        title: "Connection removed",
+        description: `You are no longer connected with ${profile?.name}.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to remove connection",
+        description: error.message,
+      });
+    },
+  });
 
   const getInitials = (name: string) => {
     return name
@@ -476,8 +531,50 @@ export default function UserProfile() {
             <Download className="h-5 w-5 mr-2" />
             Save Contact
           </Button>
+
+          {/* Remove Connection Button - only show if connected */}
+          {isConnected && !isOwnProfile && (
+            <Button
+              variant="ghost"
+              className="w-full mt-4 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+              onClick={() => setShowRemoveDialog(true)}
+              disabled={removeConnection.isPending}
+            >
+              {removeConnection.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <UserMinus className="h-4 w-4 mr-2" />
+              )}
+              Remove Connection
+            </Button>
+          )}
         </CardContent>
       </Card>
+
+      {/* Remove Connection Confirmation Dialog */}
+      <AlertDialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Connection</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove {profile?.name} from your connections?
+              This will also delete your message history with them. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => removeConnection.mutate()}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {removeConnection.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Remove Connection
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
