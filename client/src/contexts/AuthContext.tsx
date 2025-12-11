@@ -188,8 +188,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error) return { error };
 
+    // Check if user already exists - Supabase returns user with empty identities array
+    // when the email is already registered and confirmed
+    if (data.user && data.user.identities && data.user.identities.length === 0) {
+      return {
+        error: {
+          message: 'An account with this email already exists. Please sign in instead.',
+          name: 'AuthApiError',
+          status: 400
+        } as AuthError
+      };
+    }
+
     // Create profile record after successful signup
-    if (data.user) {
+    if (data.user && data.user.identities && data.user.identities.length > 0) {
       const { error: profileError } = await supabase.from('profiles').insert({
         id: data.user.id,
         email,
