@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 72 - Add staleTime to all connection queries for fresh data on navigation
+// Version 73 - Add connection counts, directory sorting, fix connection request push notifications
 
-const CACHE_VERSION = 72;
+const CACHE_VERSION = 73;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker

@@ -2,6 +2,13 @@ import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Search, Loader2, UserPlus, UserCheck, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -52,7 +59,10 @@ const MOCK_USERS: Partial<Profile>[] = [
 export default function Directory() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const { user } = useAuth();
+  const [sortBy, setSortBy] = useState<"connections" | "oldest" | "alphabetical">(() => {
+    return (localStorage.getItem("colab_directory_sort") as "connections" | "oldest" | "alphabetical") || "connections";
+  });
+  const { user, profile: myProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -96,6 +106,33 @@ export default function Directory() {
     enabled: !!user,
     staleTime: 5000, // 5 seconds - ensures fresh data on navigation/refresh
   });
+
+  // Fetch connection counts for all users (accepted connections only)
+  const { data: connectionCounts = {} } = useQuery({
+    queryKey: ["connection-counts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("connections")
+        .select("follower_id, following_id")
+        .eq("status", "accepted");
+
+      if (error) return {};
+
+      // Count connections per user (both directions)
+      const counts: Record<string, number> = {};
+      for (const conn of data || []) {
+        counts[conn.follower_id] = (counts[conn.follower_id] || 0) + 1;
+        counts[conn.following_id] = (counts[conn.following_id] || 0) + 1;
+      }
+      return counts;
+    },
+    staleTime: 30000, // 30 seconds
+  });
+
+  // Persist sort preference
+  useEffect(() => {
+    localStorage.setItem("colab_directory_sort", sortBy);
+  }, [sortBy]);
 
   // Helper to get connection status with a user
   const getConnectionStatus = (profileId: string): "none" | "pending" | "connected" => {
@@ -190,6 +227,22 @@ export default function Directory() {
     return matchesSearch && matchesTag;
   });
 
+  // Sort filtered users based on sortBy state
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    switch (sortBy) {
+      case "connections":
+        return (connectionCounts[b.id!] || 0) - (connectionCounts[a.id!] || 0);
+      case "oldest":
+        return new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime();
+      case "alphabetical":
+        const aFirst = (a.name || "").split(" ")[0].toLowerCase();
+        const bFirst = (b.name || "").split(" ")[0].toLowerCase();
+        return aFirst.localeCompare(bFirst);
+      default:
+        return 0;
+    }
+  });
+
   const getInitials = (name: string) => {
     return name
       .split(" ")
@@ -221,7 +274,7 @@ export default function Directory() {
           .eq("id", theirRequest.id);
 
         if (error) throw error;
-        return { wasAccepted: true };
+        return { wasAccepted: true, targetUserId };
       }
 
       // No pending request from them, create a new request
@@ -232,7 +285,7 @@ export default function Directory() {
       } as any);
 
       if (error) throw error;
-      return { wasAccepted: false };
+      return { wasAccepted: false, targetUserId };
     },
     onSuccess: (result) => {
       // Invalidate ALL connection queries everywhere for real-time consistency
@@ -251,6 +304,19 @@ export default function Directory() {
           title: "Connection request sent!",
           description: "You'll be notified when they respond.",
         });
+
+        // Send push notification to the recipient
+        if (result?.targetUserId && user && myProfile) {
+          fetch("/api/notify/connection", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              receiverId: result.targetUserId,
+              senderId: user.id,
+              senderName: myProfile.name,
+            }),
+          }).catch(console.error);
+        }
       }
     },
     onError: (error: any) => {
@@ -308,6 +374,16 @@ export default function Directory() {
             Discover {displayProfiles.length} members in the community
           </p>
         </div>
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as "connections" | "oldest" | "alphabetical")}>
+          <SelectTrigger className="w-[160px] rounded-xl">
+            <SelectValue placeholder="Sort by" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="connections">Most Connections</SelectItem>
+            <SelectItem value="oldest">Oldest First</SelectItem>
+            <SelectItem value="alphabetical">A-Z (First Name)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Search & Filter Bar */}
@@ -348,7 +424,7 @@ export default function Directory() {
 
       {/* Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredUsers.map((profile, index) => (
+        {sortedUsers.map((profile, index) => (
           <motion.div
             key={profile.id}
             initial={{ opacity: 0, y: 20 }}
@@ -377,6 +453,9 @@ export default function Directory() {
                     </h3>
                     <p className="text-sm text-primary font-medium">
                       {profile.role || "Member"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {connectionCounts[profile.id!] || 0} Connections
                     </p>
                   </div>
                 </div>

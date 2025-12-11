@@ -125,6 +125,23 @@ export default function UserProfile() {
     staleTime: 5000, // 5 seconds - ensures fresh data on navigation
   });
 
+  // Fetch connection count for this profile
+  const { data: connectionCount = 0 } = useQuery({
+    queryKey: ["connection-count", id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("connections")
+        .select("*", { count: "exact", head: true })
+        .or(`follower_id.eq.${id},following_id.eq.${id}`)
+        .eq("status", "accepted");
+
+      if (error) return 0;
+      return count || 0;
+    },
+    enabled: !!id,
+    staleTime: 30000,
+  });
+
   // Send connection request
   const sendRequest = useMutation({
     mutationFn: async () => {
@@ -504,6 +521,10 @@ export default function UserProfile() {
                 {profile.role}
               </div>
             )}
+
+            <p className="text-xs text-muted-foreground mt-1">
+              {connectionCount} Connection{connectionCount !== 1 ? "s" : ""}
+            </p>
 
             {profile.company && (
               <div className="flex items-center gap-2 text-muted-foreground text-sm mt-1">
