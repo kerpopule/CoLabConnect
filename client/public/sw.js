@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 76 - Fix QR code profile access race condition on Android
+// Version 77 - Fix group invite accept/decline buttons and badge updates
 
-const CACHE_VERSION = 76;
+const CACHE_VERSION = 77;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker

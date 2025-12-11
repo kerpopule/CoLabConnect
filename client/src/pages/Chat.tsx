@@ -2880,6 +2880,8 @@ export default function Chat() {
 
     queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
     queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
+    // Also invalidate the unread count used by the chat badge
+    queryClient.invalidateQueries({ queryKey: ["unread-group-count", user.id] });
     toast({
       title: "Joined group!",
       description: "You can now chat with this group.",
@@ -2931,6 +2933,8 @@ export default function Chat() {
     }
 
     queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    // Also invalidate the unread count used by the chat badge
+    queryClient.invalidateQueries({ queryKey: ["unread-group-count", user.id] });
   };
 
   // Invite members to existing group
@@ -4132,14 +4136,24 @@ export default function Chat() {
                         </span>
                         <div className="flex gap-2 w-full">
                           <button
-                            onClick={() => handleAcceptGroupInvite(g.id)}
-                            className="flex-1 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleAcceptGroupInvite(g.id);
+                            }}
+                            className="flex-1 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors active:scale-95 touch-manipulation"
                           >
                             Accept
                           </button>
                           <button
-                            onClick={() => handleDeclineGroupInvite(g.id)}
-                            className="flex-1 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-xs font-medium hover:bg-red-500/20 transition-colors"
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDeclineGroupInvite(g.id);
+                            }}
+                            className="flex-1 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-xs font-medium hover:bg-red-500/20 transition-colors active:scale-95 touch-manipulation"
                           >
                             Decline
                           </button>
