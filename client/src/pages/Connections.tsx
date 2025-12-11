@@ -153,6 +153,9 @@ export default function Connections() {
     enabled: !!user,
   });
 
+  // Track when we're doing a local mutation to avoid realtime overriding optimistic updates
+  const isMutatingRef = useRef(false);
+
   // Real-time subscription for connection changes
   useEffect(() => {
     if (!user) return;
@@ -168,6 +171,8 @@ export default function Connections() {
           filter: `follower_id=eq.${user.id}`,
         },
         () => {
+          // Skip if we're doing a local mutation (wait for it to complete)
+          if (isMutatingRef.current) return;
           // Refetch connections on any change
           queryClient.invalidateQueries({ queryKey: ["connections"] });
           queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
@@ -182,6 +187,8 @@ export default function Connections() {
           filter: `following_id=eq.${user.id}`,
         },
         () => {
+          // Skip if we're doing a local mutation (wait for it to complete)
+          if (isMutatingRef.current) return;
           // Refetch connections on any change
           queryClient.invalidateQueries({ queryKey: ["connections"] });
           queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
@@ -258,16 +265,43 @@ export default function Connections() {
         .eq("id", connectionId);
 
       if (error) throw error;
+      return connectionId;
+    },
+    onMutate: async (connectionId: string) => {
+      isMutatingRef.current = true;
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["connections", "incoming", user?.id] });
+
+      // Snapshot the previous value
+      const previousIncoming = queryClient.getQueryData(["connections", "incoming", user?.id]);
+
+      // Optimistically remove from the list immediately
+      queryClient.setQueryData(
+        ["connections", "incoming", user?.id],
+        (old: any) => old?.filter((c: any) => c.id !== connectionId) || []
+      );
+
+      return { previousIncoming };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["connections"] });
-      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
-      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+      // Delay invalidation to let optimistic update settle
+      setTimeout(() => {
+        isMutatingRef.current = false;
+        queryClient.invalidateQueries({ queryKey: ["connections"] });
+        queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+        queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+        queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      }, 500);
       toast({
         title: "Request declined",
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, _connectionId, context) => {
+      isMutatingRef.current = false;
+      // Rollback on error
+      if (context?.previousIncoming) {
+        queryClient.setQueryData(["connections", "incoming", user?.id], context.previousIncoming);
+      }
       toast({
         variant: "destructive",
         title: "Failed to decline",
@@ -288,6 +322,7 @@ export default function Connections() {
       return connectionId;
     },
     onMutate: async (connectionId: string) => {
+      isMutatingRef.current = true;
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ["connections", "outgoing", user?.id] });
 
@@ -303,14 +338,19 @@ export default function Connections() {
       return { previousOutgoing };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["connections"] });
-      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
-      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      // Delay invalidation to let optimistic update settle
+      setTimeout(() => {
+        isMutatingRef.current = false;
+        queryClient.invalidateQueries({ queryKey: ["connections"] });
+        queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+        queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      }, 500);
       toast({
         title: "Request cancelled",
       });
     },
     onError: (error: any, _connectionId, context) => {
+      isMutatingRef.current = false;
       // Rollback on error
       if (context?.previousOutgoing) {
         queryClient.setQueryData(["connections", "outgoing", user?.id], context.previousOutgoing);

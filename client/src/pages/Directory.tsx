@@ -191,6 +191,27 @@ export default function Directory() {
     mutationFn: async (targetUserId: string) => {
       if (!user) throw new Error("Not authenticated");
 
+      // Check if target user already sent us a pending request (mutual request case)
+      const { data: theirRequest } = await supabase
+        .from("connections")
+        .select("id")
+        .eq("follower_id", targetUserId)
+        .eq("following_id", user.id)
+        .eq("status", "pending")
+        .maybeSingle();
+
+      if (theirRequest) {
+        // They already requested us - accept their request instead of creating a new one
+        const { error } = await supabase
+          .from("connections")
+          .update({ status: "accepted" })
+          .eq("id", theirRequest.id);
+
+        if (error) throw error;
+        return { wasAccepted: true };
+      }
+
+      // No pending request from them, create a new request
       const { error } = await supabase.from("connections").insert({
         follower_id: user.id,
         following_id: targetUserId,
@@ -198,14 +219,24 @@ export default function Directory() {
       } as any);
 
       if (error) throw error;
+      return { wasAccepted: false };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["connections"] });
       queryClient.invalidateQueries({ queryKey: ["my-connections"] });
-      toast({
-        title: "Connection request sent!",
-        description: "You'll be notified when they respond.",
-      });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+
+      if (result?.wasAccepted) {
+        toast({
+          title: "Connected!",
+          description: "They had already requested you - you're now connected!",
+        });
+      } else {
+        toast({
+          title: "Connection request sent!",
+          description: "You'll be notified when they respond.",
+        });
+      }
     },
     onError: (error: any) => {
       if (error.message.includes("duplicate")) {
