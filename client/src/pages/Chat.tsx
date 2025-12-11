@@ -3283,13 +3283,8 @@ export default function Chat() {
       inputRef.current.style.height = 'auto';
     }
 
+    // Single focus call - multiple calls confuse Android's keyboard state machine
     inputRef.current?.focus();
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-    });
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 50);
 
     // Upload pending images and files first
     const imagesToSend = [...pendingImages];

@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 74 - Fix inline message editing to edit in bubble, disable edit for media
+// Version 75 - Fix Android keyboard dismissal issue
 
-const CACHE_VERSION = 74;
+const CACHE_VERSION = 75;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker

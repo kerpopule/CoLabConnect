@@ -204,23 +204,16 @@ label {
 }
 
 /* Mobile layout - only lock scroll on chat page (controlled via body class) */
+/* Note: Removed position:fixed to allow Android keyboard viewport management */
 @media (max-width: 768px) {
   body.chat-page-active {
     overflow: hidden;
-    position: fixed;
-    width: 100%;
-    height: 100%;
-    height: 100dvh;
   }
 
   body.chat-page-active #root {
     overflow: hidden;
-    position: fixed;
-    width: 100%;
     height: 100%;
     height: 100dvh;
-    top: 0;
-    left: 0;
   }
 
   /* Hide mobile nav when keyboard is open - aggressive rules for iOS */
