@@ -91,6 +91,12 @@ export function GifPicker({ onGifSelect, disabled, buttonClassName }: GifPickerP
             placeholder="Search GIFs..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
             className="h-9 pl-9"
             autoFocus={!isMobile}
           />
