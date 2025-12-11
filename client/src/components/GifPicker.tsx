@@ -4,8 +4,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Search } from "lucide-react";
+import { Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface Gif {
   id: string;
@@ -29,6 +30,7 @@ export function GifPicker({ onGifSelect, disabled, buttonClassName }: GifPickerP
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const isMobile = useIsMobile();
 
   // Debounce search query
   useEffect(() => {
@@ -73,6 +75,117 @@ export function GifPicker({ onGifSelect, disabled, buttonClassName }: GifPickerP
     setSearchQuery("");
   };
 
+  const handleClose = () => {
+    setIsOpen(false);
+    setSearchQuery("");
+  };
+
+  // GIF picker content (shared between mobile and desktop)
+  const GifPickerContent = (
+    <>
+      {/* Header with search and close button */}
+      <div className="p-3 border-b flex gap-2 items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search GIFs..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9 pl-9"
+            autoFocus={!isMobile}
+          />
+        </div>
+        {isMobile && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleClose}
+            className="shrink-0 h-9 w-9"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        )}
+      </div>
+
+      {/* GIF grid */}
+      <ScrollArea className={isMobile ? "h-[50vh]" : "h-[280px] sm:h-[320px]"}>
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full min-h-[200px]">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-2 p-4">
+            <p className="text-sm text-muted-foreground">Failed to load GIFs</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              Try again
+            </Button>
+          </div>
+        ) : gifs.length === 0 ? (
+          <div className="flex items-center justify-center h-full min-h-[200px]">
+            <p className="text-sm text-muted-foreground">
+              {debouncedQuery ? "No GIFs found" : "Loading..."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-1 p-2">
+            {gifs.map((gif) => (
+              <GifThumbnail
+                key={gif.id}
+                gif={gif}
+                onClick={() => handleGifClick(gif.url)}
+              />
+            ))}
+          </div>
+        )}
+      </ScrollArea>
+
+      {/* Tenor attribution (required by API terms) */}
+      <div className="p-2 border-t text-center">
+        <span className="text-xs text-muted-foreground">
+          Powered by Tenor
+        </span>
+      </div>
+    </>
+  );
+
+  // Mobile: Use fixed overlay that appears above the keyboard
+  if (isMobile) {
+    return (
+      <>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "shrink-0 rounded-full transition-colors h-12 w-12 text-muted-foreground hover:text-primary",
+            buttonClassName
+          )}
+          disabled={disabled}
+          onClick={() => setIsOpen(true)}
+          title="Send GIF"
+        >
+          <span className="text-xs font-bold">GIF</span>
+        </Button>
+
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/50 z-50"
+              onClick={handleClose}
+            />
+            {/* GIF Picker panel - fixed at bottom, above keyboard */}
+            <div className="fixed left-0 right-0 bottom-0 z-50 bg-background border-t rounded-t-xl shadow-lg max-h-[70vh] flex flex-col">
+              {GifPickerContent}
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
+
+  // Desktop: Use popover
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
@@ -97,58 +210,7 @@ export function GifPicker({ onGifSelect, disabled, buttonClassName }: GifPickerP
         align="start"
         sideOffset={8}
       >
-        {/* Search input */}
-        <div className="p-3 border-b">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search GIFs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 pl-9"
-              autoFocus
-            />
-          </div>
-        </div>
-
-        {/* GIF grid */}
-        <ScrollArea className="h-[280px] sm:h-[320px]">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : isError ? (
-            <div className="flex flex-col items-center justify-center h-full gap-2 p-4">
-              <p className="text-sm text-muted-foreground">Failed to load GIFs</p>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                Try again
-              </Button>
-            </div>
-          ) : gifs.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-sm text-muted-foreground">
-                {debouncedQuery ? "No GIFs found" : "Loading..."}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-1 p-2">
-              {gifs.map((gif) => (
-                <GifThumbnail
-                  key={gif.id}
-                  gif={gif}
-                  onClick={() => handleGifClick(gif.url)}
-                />
-              ))}
-            </div>
-          )}
-        </ScrollArea>
-
-        {/* Tenor attribution (required by API terms) */}
-        <div className="p-2 border-t text-center">
-          <span className="text-xs text-muted-foreground">
-            Powered by Tenor
-          </span>
-        </div>
+        {GifPickerContent}
       </PopoverContent>
     </Popover>
   );
