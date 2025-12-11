@@ -4114,7 +4114,7 @@ export default function Chat() {
                         ? (isGroupNotificationsEnabled ? "text-primary" : "text-muted-foreground")
                         : isPrivateChat
                         ? (activeDm && !dmSettings[activeDm]?.muted ? "text-primary" : "text-muted-foreground")
-                        : (isFollowingTopic ? "text-primary" : "text-muted-foreground")
+                        : (activeTopic && !topicSettings[activeTopic]?.muted ? "text-primary" : "text-muted-foreground")
                     }`}
                     onClick={() => {
                       if (isGroupChat) {
@@ -4135,12 +4135,13 @@ export default function Chat() {
                           const currentMuted = dmSettings[activeDm]?.muted || false;
                           handleMuteDm(activeDm, !currentMuted);
                         }
-                      } else {
-                        // Topic notifications
+                      } else if (activeTopic) {
+                        // Topic notifications - toggle mute status
                         if (!hasNotificationsEnabled) {
                           setShowTopicPrompt(true);
                         } else {
-                          toggleFollow();
+                          const currentMuted = topicSettings[activeTopic]?.muted || false;
+                          handleMuteTopic(activeTopic, !currentMuted);
                         }
                       }
                     }}
@@ -4150,7 +4151,7 @@ export default function Chat() {
                         ? (isGroupNotificationsEnabled ? "Mute group notifications" : "Enable group notifications")
                         : isPrivateChat
                         ? (activeDm && !dmSettings[activeDm]?.muted ? "Mute conversation" : "Unmute conversation")
-                        : (isFollowingTopic ? "Disable notifications for this channel" : "Enable notifications for this channel")
+                        : (activeTopic && !topicSettings[activeTopic]?.muted ? "Mute topic" : "Unmute topic")
                     }
                   >
                     {followLoading ? (
@@ -4160,7 +4161,7 @@ export default function Chat() {
                     ) : isPrivateChat ? (
                       (activeDm && !dmSettings[activeDm]?.muted) ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
                     ) : (
-                      isFollowingTopic ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
+                      (activeTopic && !topicSettings[activeTopic]?.muted) ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
                     )}
                   </Button>
                 )}
