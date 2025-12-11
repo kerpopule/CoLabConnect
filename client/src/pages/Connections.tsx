@@ -46,7 +46,7 @@ type ConnectionWithProfile = Connection & {
 
 export default function Connections() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, profile: currentUserProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [connectionToRemove, setConnectionToRemove] = useState<{ id: string; name: string } | null>(null);
@@ -237,8 +237,11 @@ export default function Connections() {
         .eq("id", connectionId);
 
       if (error) throw error;
+
+      // Return the original requester's ID so we can notify them
+      return { requesterId: connection.follower_id };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["connections"] });
       queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
@@ -246,6 +249,19 @@ export default function Connections() {
         title: "Connection accepted!",
         description: "You are now connected.",
       });
+
+      // Send push notification to the original requester
+      if (data?.requesterId && user && currentUserProfile) {
+        fetch("/api/notify/connection-accepted", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            receiverId: data.requesterId,
+            accepterId: user.id,
+            accepterName: currentUserProfile.name,
+          }),
+        }).catch(console.error);
+      }
     },
     onError: (error: any) => {
       toast({

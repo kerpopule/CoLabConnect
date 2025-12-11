@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { log } from "./index";
-import { notifyNewDM, notifyConnectionRequest, notifyFollowedChat, notifyGroupInvite, notifyGroupMessage, notifyTopicKick, notifyTopicInviteBack, notifyGroupRename, notifyGroupMemberJoined, notifyGroupInviteDeclined, notifyGroupAdminTransfer } from "./pushNotifications";
+import { notifyNewDM, notifyConnectionRequest, notifyConnectionAccepted, notifyFollowedChat, notifyGroupInvite, notifyGroupMessage, notifyTopicKick, notifyTopicInviteBack, notifyGroupRename, notifyGroupMemberJoined, notifyGroupInviteDeclined, notifyGroupAdminTransfer } from "./pushNotifications";
 import { setViewing, isUserViewingDm, isUserViewing } from "./activeViewers";
 
 // Initialize Supabase client with service role key for server-side operations
@@ -998,6 +998,23 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       log(`Connection notification error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Trigger notification for connection accepted
+  app.post("/api/notify/connection-accepted", async (req, res) => {
+    try {
+      const { receiverId, accepterId, accepterName } = req.body;
+
+      if (!receiverId || !accepterId || !accepterName) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      await notifyConnectionAccepted(receiverId, accepterId, accepterName);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Connection accepted notification error: ${error.message}`);
       res.status(500).json({ error: "Internal server error" });
     }
   });

@@ -194,6 +194,39 @@ export async function notifyConnectionRequest(
   });
 }
 
+// Send notification when a connection request is accepted
+export async function notifyConnectionAccepted(
+  receiverId: string,
+  accepterId: string,
+  accepterName: string
+): Promise<void> {
+  // Check if user has connection notifications enabled
+  const { data: prefs } = await supabase
+    .from("notification_preferences")
+    .select("connection_notifications")
+    .eq("user_id", receiverId)
+    .single();
+
+  // Default to enabled if no preference set
+  if (prefs && prefs.connection_notifications === false) {
+    return;
+  }
+
+  await sendPushNotification(receiverId, {
+    title: "Connection Accepted!",
+    body: `${accepterName} accepted your connection request`,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `connection-accepted-${accepterId}`,
+    data: {
+      type: "connection",
+      senderId: accepterId,
+      senderName: accepterName,
+      url: `/profile/${accepterId}`,
+    },
+  });
+}
+
 // Send notification for a new message in a followed chat room
 export async function notifyFollowedChat(
   topicId: string,
