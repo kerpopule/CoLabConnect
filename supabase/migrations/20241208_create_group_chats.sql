@@ -46,6 +46,19 @@ ALTER TABLE group_chat_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE group_messages ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for group_chats
+-- Drop existing policies first to make migration idempotent
+DROP POLICY IF EXISTS "Users can view their groups" ON group_chats;
+DROP POLICY IF EXISTS "Users can create groups" ON group_chats;
+DROP POLICY IF EXISTS "Admins can update groups" ON group_chats;
+DROP POLICY IF EXISTS "Users can view group members" ON group_chat_members;
+DROP POLICY IF EXISTS "Users can invite members" ON group_chat_members;
+DROP POLICY IF EXISTS "Users can update own membership" ON group_chat_members;
+DROP POLICY IF EXISTS "Admins can remove members" ON group_chat_members;
+DROP POLICY IF EXISTS "Users can view group messages" ON group_messages;
+DROP POLICY IF EXISTS "Users can send group messages" ON group_messages;
+DROP POLICY IF EXISTS "Users can update own messages" ON group_messages;
+DROP POLICY IF EXISTS "Users can delete own messages" ON group_messages;
+
 -- Users can view groups they are accepted members of
 CREATE POLICY "Users can view their groups" ON group_chats
   FOR SELECT USING (
