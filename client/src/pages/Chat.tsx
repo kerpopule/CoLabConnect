@@ -2831,7 +2831,7 @@ export default function Chat() {
 
   // Accept group invite
   const handleAcceptGroupInvite = async (groupId: string) => {
-    if (!user || !profile) return;
+    if (!user || !currentUserProfile) return;
 
     // Get group info first
     const group = groupChats?.find((g: any) => g.id === groupId);
@@ -2860,7 +2860,7 @@ export default function Chat() {
     await supabase.from("group_messages").insert({
       group_id: groupId,
       user_id: user.id,
-      content: `[SYSTEM] ${profile.name} has joined the group`,
+      content: `[SYSTEM] ${currentUserProfile.name} has joined the group`,
     });
 
     // Get group name for notification
@@ -2874,7 +2874,7 @@ export default function Chat() {
         groupId,
         groupName,
         joinedUserId: user.id,
-        joinedUserName: profile.name,
+        joinedUserName: currentUserProfile.name,
       }),
     }).catch(console.error);
 
@@ -2890,7 +2890,7 @@ export default function Chat() {
 
   // Decline group invite
   const handleDeclineGroupInvite = async (groupId: string) => {
-    if (!user || !profile) return;
+    if (!user || !currentUserProfile) return;
 
     // Get the membership info to find out who invited this user
     const { data: membership } = await supabase
@@ -2926,7 +2926,7 @@ export default function Chat() {
         body: JSON.stringify({
           receiverId: membership.invited_by,
           declinedUserId: user.id,
-          declinedUserName: profile.name,
+          declinedUserName: currentUserProfile.name,
           groupName,
         }),
       }).catch(console.error);

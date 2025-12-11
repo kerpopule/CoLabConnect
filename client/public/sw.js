@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 77 - Fix group invite accept/decline buttons and badge updates
+// Version 78 - Fix profile variable reference in group invite handlers
 
-const CACHE_VERSION = 77;
+const CACHE_VERSION = 78;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker
