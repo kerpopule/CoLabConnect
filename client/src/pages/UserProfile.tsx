@@ -39,30 +39,32 @@ import { OnlineIndicator } from "@/components/OnlineIndicator";
 
 const QR_ACCESS_KEY = "colab-qr-access";
 
+// Helper to check QR access synchronously (avoids race condition with useEffect)
+function checkQrAccess(id: string | undefined, searchString: string): boolean {
+  const isQrAccess = new URLSearchParams(searchString).get("qr") === "true";
+  if (isQrAccess && id) {
+    // Store the profile ID that can be viewed without login
+    sessionStorage.setItem(QR_ACCESS_KEY, id);
+    return true;
+  } else if (id) {
+    // Check if this profile has QR access stored
+    const storedQrId = sessionStorage.getItem(QR_ACCESS_KEY);
+    return storedQrId === id;
+  }
+  return false;
+}
+
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const searchString = useSearch();
-  const isQrAccess = new URLSearchParams(searchString).get("qr") === "true";
+  // Compute QR access synchronously to avoid race condition on initial render
+  const hasQrAccess = checkQrAccess(id, searchString);
   const { user, profile: currentUserProfile, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [pendingConnect, setPendingConnect] = useState(false);
-  const [hasQrAccess, setHasQrAccess] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
-
-  // Handle QR code access - store allowed profile ID in sessionStorage
-  useEffect(() => {
-    if (isQrAccess && id) {
-      // Store the profile ID that can be viewed without login
-      sessionStorage.setItem(QR_ACCESS_KEY, id);
-      setHasQrAccess(true);
-    } else if (id) {
-      // Check if this profile has QR access stored
-      const storedQrId = sessionStorage.getItem(QR_ACCESS_KEY);
-      setHasQrAccess(storedQrId === id);
-    }
-  }, [isQrAccess, id]);
 
   // Check for pending connect request (set after login)
   useEffect(() => {

@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 75 - Fix Android keyboard dismissal issue
+// Version 76 - Fix QR code profile access race condition on Android
 
-const CACHE_VERSION = 75;
+const CACHE_VERSION = 76;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker
