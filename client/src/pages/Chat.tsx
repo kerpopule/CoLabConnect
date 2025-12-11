@@ -2251,10 +2251,52 @@ export default function Chat() {
   const handleGifSelect = (gifUrl: string) => {
     if (activeTab === "dms" && activeDm) {
       sendPrivateMessage.mutate(gifUrl);
+      // Send notification for GIF
+      if (activeDmProfile && currentUserProfile) {
+        fetch("/api/notify/dm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            receiverId: activeDm,
+            senderId: user?.id,
+            senderName: currentUserProfile.name,
+            messagePreview: "sent a GIF",
+          }),
+        }).catch(console.error);
+      }
     } else if (activeTab === "groups" && activeGroup) {
       sendGroupMessage.mutate(gifUrl);
+      // Send notification for GIF
+      if (activeGroupData && currentUserProfile) {
+        fetch("/api/notify/group-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            groupId: activeGroup,
+            groupName: activeGroupData.name || activeGroupData.emojis?.join(""),
+            senderId: user?.id,
+            senderName: currentUserProfile.name,
+            messagePreview: "sent a GIF",
+          }),
+        }).catch(console.error);
+      }
     } else if (activeTab === "general" && activeTopic) {
       sendMessage.mutate(gifUrl);
+      // Send notification for GIF
+      const topicForNotify = displayTopics.find((t) => t.id === activeTopic);
+      if (topicForNotify && currentUserProfile) {
+        fetch("/api/notify/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            topicId: activeTopic,
+            topicName: topicForNotify.name,
+            senderId: user?.id,
+            senderName: currentUserProfile.name,
+            messagePreview: "sent a GIF",
+          }),
+        }).catch(console.error);
+      }
     }
   };
 
@@ -3138,6 +3180,116 @@ export default function Chat() {
       }
     };
 
+    // Helper to format notification preview for media content
+    const formatNotificationPreview = (msgContent: string): string => {
+      // Check if it's a GIF (from Tenor)
+      if (msgContent.includes("tenor.com") && msgContent.includes(".gif")) {
+        return "sent a GIF";
+      }
+      // Check if it's an image URL
+      if (isImageUrl(msgContent)) {
+        return "sent a photo";
+      }
+      // Check if it's a file URL
+      if (isFileUrl(msgContent)) {
+        // Try to extract filename from URL
+        try {
+          const url = new URL(msgContent);
+          const filename = url.pathname.split("/").pop() || "file";
+          return `sent a file: ${filename}`;
+        } catch {
+          return "sent a file";
+        }
+      }
+      // Regular text message
+      return msgContent;
+    };
+
+    // Helper to send notification for any message type
+    const sendNotification = (msgContent: string) => {
+      const preview = formatNotificationPreview(msgContent);
+
+      if (activeTab === "dms" && activeDm && activeDmProfile && currentUserProfile) {
+        fetch("/api/notify/dm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            receiverId: activeDm,
+            senderId: user?.id,
+            senderName: currentUserProfile.name,
+            messagePreview: preview,
+          }),
+        }).catch(console.error);
+      } else if (activeTab === "groups" && activeGroup && activeGroupData && currentUserProfile) {
+        fetch("/api/notify/group-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            groupId: activeGroup,
+            groupName: activeGroupData.name || activeGroupData.emojis?.join(""),
+            senderId: user?.id,
+            senderName: currentUserProfile.name,
+            messagePreview: preview,
+          }),
+        }).catch(console.error);
+
+        // Check for @mentions (only for text messages)
+        if (!isImageUrl(msgContent) && !isFileUrl(msgContent)) {
+          const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
+          const mentions = msgContent.match(mentionRegex);
+          if (mentions && mentions.length > 0) {
+            fetch("/api/notify/mention", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                groupId: activeGroup,
+                groupName: activeGroupData.name || activeGroupData.emojis?.join(""),
+                senderId: user?.id,
+                senderName: currentUserProfile.name,
+                messagePreview: msgContent,
+                mentionedNames: mentions.map(m => m.substring(1)),
+              }),
+            }).catch(console.error);
+          }
+        }
+      } else if (activeTab === "general" && activeTopic) {
+        const topicForNotify = displayTopics.find((t) => t.id === activeTopic);
+        if (topicForNotify && currentUserProfile) {
+          fetch("/api/notify/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              topicId: activeTopic,
+              topicName: topicForNotify.name,
+              senderId: user?.id,
+              senderName: currentUserProfile.name,
+              messagePreview: preview,
+            }),
+          }).catch(console.error);
+
+          // Check for @mentions (only for text messages)
+          if (!isImageUrl(msgContent) && !isFileUrl(msgContent)) {
+            const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
+            const mentions = msgContent.match(mentionRegex);
+            if (mentions && mentions.length > 0) {
+              fetch("/api/notify/mention", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  topicId: activeTopic,
+                  topicName: topicForNotify.name,
+                  senderId: user?.id,
+                  senderName: currentUserProfile.name,
+                  messagePreview: msgContent,
+                  mentionedNames: mentions.map(m => m.substring(1)),
+                }),
+              }).catch(console.error);
+            }
+          }
+        }
+      }
+    };
+
     if (activeTab === "ai") {
       if (content) await sendAiMessage(content);
     } else if (!user) {
@@ -3151,12 +3303,14 @@ export default function Chat() {
             const imageUrl = await uploadImage(img);
             if (imageUrl) {
               await sendMsg(imageUrl);
+              sendNotification(imageUrl);
             }
           }
           for (const fileData of filesToSend) {
             const fileUrl = await uploadFile(fileData);
             if (fileUrl) {
               await sendMsg(fileUrl);
+              sendNotification(fileUrl);
             }
           }
         } finally {
@@ -3167,82 +3321,7 @@ export default function Chat() {
       // Send text content
       if (content) {
         await sendMsg(content);
-
-        // Send notifications
-        if (activeTab === "dms" && activeDm && activeDmProfile && currentUserProfile) {
-          fetch("/api/notify/dm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              receiverId: activeDm,
-              senderId: user.id,
-              senderName: currentUserProfile.name,
-              messagePreview: content,
-            }),
-          }).catch(console.error);
-        } else if (activeTab === "groups" && activeGroup && activeGroupData && currentUserProfile) {
-          fetch("/api/notify/group-message", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              groupId: activeGroup,
-              groupName: activeGroupData.name || activeGroupData.emojis?.join(""),
-              senderId: user.id,
-              senderName: currentUserProfile.name,
-              messagePreview: content,
-            }),
-          }).catch(console.error);
-
-          // Check for @mentions
-          const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
-          const mentions = content.match(mentionRegex);
-          if (mentions && mentions.length > 0) {
-            fetch("/api/notify/mention", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                groupId: activeGroup,
-                groupName: activeGroupData.name || activeGroupData.emojis?.join(""),
-                senderId: user.id,
-                senderName: currentUserProfile.name,
-                messagePreview: content,
-                mentionedNames: mentions.map(m => m.substring(1)),
-              }),
-            }).catch(console.error);
-          }
-        } else if (activeTab === "general" && activeTopic) {
-          const topicForNotify = displayTopics.find((t) => t.id === activeTopic);
-          if (topicForNotify && currentUserProfile) {
-            fetch("/api/notify/chat", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                topicId: activeTopic,
-                topicName: topicForNotify.name,
-                senderId: user.id,
-                senderName: currentUserProfile.name,
-                messagePreview: content,
-              }),
-            }).catch(console.error);
-
-            const mentionRegex = /@([A-Za-z]+ [A-Za-z]+)/g;
-            const mentions = content.match(mentionRegex);
-            if (mentions && mentions.length > 0) {
-              fetch("/api/notify/mention", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  topicId: activeTopic,
-                  topicName: topicForNotify.name,
-                  senderId: user.id,
-                  senderName: currentUserProfile.name,
-                  messagePreview: content,
-                  mentionedNames: mentions.map(m => m.substring(1)),
-                }),
-              }).catch(console.error);
-            }
-          }
-        }
+        sendNotification(content);
       }
     }
   };
