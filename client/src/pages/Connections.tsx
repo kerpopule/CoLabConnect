@@ -285,8 +285,8 @@ export default function Connections() {
     },
     onSuccess: () => {
       isMutatingRef.current = false;
-      // Don't invalidate - trust the optimistic update
-      // Realtime subscription will handle any external changes
+      // Invalidate Directory's query so it shows updated connection status
+      queryClient.invalidateQueries({ queryKey: ["my-connections", user?.id] });
       toast({
         title: "Request declined",
       });
@@ -334,8 +334,8 @@ export default function Connections() {
     },
     onSuccess: () => {
       isMutatingRef.current = false;
-      // Don't invalidate - trust the optimistic update
-      // Realtime subscription will handle any external changes
+      // Invalidate Directory's query so it shows updated connection status
+      queryClient.invalidateQueries({ queryKey: ["my-connections", user?.id] });
       toast({
         title: "Request cancelled",
       });

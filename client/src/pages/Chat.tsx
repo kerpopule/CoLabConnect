@@ -4483,15 +4483,18 @@ export default function Chat() {
                         className="w-full flex items-center justify-between p-3 rounded-xl border border-border hover:border-primary/30 transition-all"
                       >
                         <div className="flex items-center gap-3">
-                          <Avatar className="h-10 w-10">
-                            <AvatarImage
-                              src={connection.avatar_url || undefined}
-                              alt={connection.name}
-                            />
-                            <AvatarFallback className="bg-primary/10 text-primary">
-                              {getInitials(connection.name)}
-                            </AvatarFallback>
-                          </Avatar>
+                          <div className="relative">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage
+                                src={connection.avatar_url || undefined}
+                                alt={connection.name}
+                              />
+                              <AvatarFallback className="bg-primary/10 text-primary">
+                                {getInitials(connection.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <OnlineIndicator userId={connection.id} className="absolute -bottom-0.5 -right-0.5" size="sm" />
+                          </div>
                           <div className="text-left">
                             <p className="font-medium">{connection.name}</p>
                             <p className="text-sm text-muted-foreground">
@@ -4521,15 +4524,18 @@ export default function Chat() {
                           className="w-full flex items-center justify-between p-3 rounded-xl border border-border"
                         >
                           <div className="flex items-center gap-3">
-                            <Avatar className="h-10 w-10">
-                              <AvatarImage
-                                src={member.profiles?.avatar_url || undefined}
-                                alt={member.profiles?.name}
-                              />
-                              <AvatarFallback className="bg-primary/10 text-primary">
-                                {getInitials(member.profiles?.name || "?")}
-                              </AvatarFallback>
-                            </Avatar>
+                            <div className="relative">
+                              <Avatar className="h-10 w-10">
+                                <AvatarImage
+                                  src={member.profiles?.avatar_url || undefined}
+                                  alt={member.profiles?.name}
+                                />
+                                <AvatarFallback className="bg-primary/10 text-primary">
+                                  {getInitials(member.profiles?.name || "?")}
+                                </AvatarFallback>
+                              </Avatar>
+                              <OnlineIndicator userId={member.user_id} className="absolute -bottom-0.5 -right-0.5" size="sm" />
+                            </div>
                             <div className="text-left">
                               <p className="font-medium">
                                 {member.profiles?.name}
