@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ChatTileGrid from "@/components/ChatTileGrid";
 import GroupCreateModal from "@/components/GroupCreateModal";
+import { GifPicker } from "@/components/GifPicker";
 
 type AIMessage = {
   id: string;
@@ -2246,6 +2247,17 @@ export default function Chat() {
     },
   });
 
+  // Handle GIF selection - sends GIF URL as message content
+  const handleGifSelect = (gifUrl: string) => {
+    if (activeTab === "dms" && activeDm) {
+      sendPrivateMessage.mutate(gifUrl);
+    } else if (activeTab === "groups" && activeGroup) {
+      sendGroupMessage.mutate(gifUrl);
+    } else if (activeTab === "general" && activeTopic) {
+      sendMessage.mutate(gifUrl);
+    }
+  };
+
   // Edit public message
   const handleEditMessage = async (messageId: string, newContent: string) => {
     let error;
@@ -4273,21 +4285,11 @@ export default function Chat() {
                     <Sparkles className="h-6 w-6" />
                   </Button>
                 ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0 rounded-full transition-colors h-12 w-12 text-muted-foreground hover:text-primary"
-                    onClick={() => {
-                      toast({
-                        title: "GIFs Coming Soon!",
-                        description: "Stay tuned for this feature.",
-                      });
-                    }}
-                    title="GIFs Coming Soon!"
-                  >
-                    <span className="text-xs font-bold">GIF</span>
-                  </Button>
+                  <GifPicker
+                    onGifSelect={handleGifSelect}
+                    disabled={isPending || isUploadingImages}
+                    buttonClassName="h-12 w-12"
+                  />
                 )}
                 {/* Image/file upload button (not for AI chat) */}
                 {!isAiChat && (

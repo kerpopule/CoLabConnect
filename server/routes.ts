@@ -11,6 +11,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
 const AI_MODEL = "google/gemini-2.5-flash-lite";
+const TENOR_API_KEY = process.env.TENOR_API_KEY || "";
 
 interface Profile {
   id: string;
@@ -154,6 +155,115 @@ export async function registerRoutes(
     } catch (error: any) {
       log(`AI chat error: ${error.message}`);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================
+  // Tenor GIF API Endpoints
+  // ============================================
+
+  // Get featured/trending GIFs
+  app.get("/api/tenor/featured", async (req, res) => {
+    try {
+      const { limit = "20", pos = "" } = req.query;
+
+      if (!TENOR_API_KEY) {
+        return res.status(500).json({ error: "Tenor API not configured" });
+      }
+
+      const params = new URLSearchParams({
+        key: TENOR_API_KEY,
+        limit: limit as string,
+        contentfilter: "high", // Safe content only
+        media_filter: "gif,tinygif", // Only need these formats
+      });
+
+      if (pos) {
+        params.append("pos", pos as string);
+      }
+
+      const response = await fetch(
+        `https://tenor.googleapis.com/v2/featured?${params}`
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log(`Tenor API error: ${response.status} - ${errorText}`);
+        return res.status(500).json({ error: "Failed to fetch GIFs" });
+      }
+
+      const data = await response.json();
+
+      // Transform response to minimal payload
+      const gifs = data.results?.map((gif: any) => ({
+        id: gif.id,
+        title: gif.title || "",
+        url: gif.media_formats?.gif?.url,
+        preview: gif.media_formats?.tinygif?.url || gif.media_formats?.gif?.url,
+      })) || [];
+
+      res.json({
+        gifs,
+        next: data.next || null,
+      });
+    } catch (error: any) {
+      log(`Tenor featured error: ${error.message}`);
+      res.status(500).json({ error: "Failed to fetch GIFs" });
+    }
+  });
+
+  // Search GIFs
+  app.get("/api/tenor/search", async (req, res) => {
+    try {
+      const { q, limit = "20", pos = "" } = req.query;
+
+      if (!q) {
+        return res.status(400).json({ error: "Search query required" });
+      }
+
+      if (!TENOR_API_KEY) {
+        return res.status(500).json({ error: "Tenor API not configured" });
+      }
+
+      const params = new URLSearchParams({
+        key: TENOR_API_KEY,
+        q: q as string,
+        limit: limit as string,
+        contentfilter: "high", // Safe content only
+        media_filter: "gif,tinygif", // Only need these formats
+      });
+
+      if (pos) {
+        params.append("pos", pos as string);
+      }
+
+      const response = await fetch(
+        `https://tenor.googleapis.com/v2/search?${params}`
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log(`Tenor API error: ${response.status} - ${errorText}`);
+        return res.status(500).json({ error: "Failed to search GIFs" });
+      }
+
+      const data = await response.json();
+
+      // Transform response to minimal payload
+      const gifs = data.results?.map((gif: any) => ({
+        id: gif.id,
+        title: gif.title || "",
+        url: gif.media_formats?.gif?.url,
+        preview: gif.media_formats?.tinygif?.url || gif.media_formats?.gif?.url,
+      })) || [];
+
+      res.json({
+        gifs,
+        next: data.next || null,
+      });
+    } catch (error: any) {
+      log(`Tenor search error: ${error.message}`);
+      res.status(500).json({ error: "Failed to search GIFs" });
     }
   });
 
