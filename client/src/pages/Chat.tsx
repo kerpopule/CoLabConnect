@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, UserMinus, X, FileText, Shield, Pencil, GripVertical, Upload } from "lucide-react";
+import { Send, Loader2, LogIn, Lock, MessageCircle, Users, Sparkles, Bell, BellOff, ArrowLeft, Trash2, ChevronDown, Settings, Plus, UserPlus, UserMinus, X, FileText, Shield, Pencil, GripVertical, Upload, Image } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Topic, Message, Profile, PrivateMessage, getPrivateChatId, GroupChat, GroupMessage, GroupChatMember } from "@/lib/supabase";
@@ -3550,6 +3550,60 @@ export default function Chat() {
           {/* Spacer */}
           <div className="flex-1" />
 
+          {/* Notification Bell (for non-AI chats in chat view) */}
+          {viewMode === "chat" && activeTab !== "ai" && (
+            <button
+              onClick={() => {
+                if (isGroupChat) {
+                  if (!hasNotificationsEnabled) {
+                    setShowTopicPrompt(true);
+                  } else {
+                    handleToggleGroupNotifications();
+                  }
+                } else if (isPrivateChat && activeDm) {
+                  if (!hasNotificationsEnabled) {
+                    setShowDmPrompt(true);
+                  } else {
+                    const currentMuted = dmSettings[activeDm]?.muted || false;
+                    handleMuteDm(activeDm, !currentMuted);
+                  }
+                } else if (activeTopic) {
+                  if (!hasNotificationsEnabled) {
+                    setShowTopicPrompt(true);
+                  } else {
+                    const currentMuted = topicSettings[activeTopic]?.muted || false;
+                    handleMuteTopic(activeTopic, !currentMuted);
+                  }
+                }
+              }}
+              disabled={followLoading}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
+                isGroupChat
+                  ? (isGroupNotificationsEnabled ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
+                  : isPrivateChat
+                  ? (activeDm && !dmSettings[activeDm]?.muted ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
+                  : (activeTopic && !topicSettings[activeTopic]?.muted ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
+              }`}
+              title={
+                isGroupChat
+                  ? (isGroupNotificationsEnabled ? "Mute group" : "Unmute group")
+                  : isPrivateChat
+                  ? (activeDm && !dmSettings[activeDm]?.muted ? "Mute conversation" : "Unmute conversation")
+                  : (activeTopic && !topicSettings[activeTopic]?.muted ? "Mute topic" : "Unmute topic")
+              }
+            >
+              {followLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isGroupChat ? (
+                isGroupNotificationsEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
+              ) : isPrivateChat ? (
+                (activeDm && !dmSettings[activeDm]?.muted) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
+              ) : (
+                (activeTopic && !topicSettings[activeTopic]?.muted) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
+              )}
+            </button>
+          )}
+
           {/* AI Chat clear button */}
           {activeTab === "ai" && aiMessages.length > 1 && (
             <button
@@ -4109,60 +4163,16 @@ export default function Chat() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className={`shrink-0 rounded-full transition-colors h-12 w-12 ${
-                      isGroupChat
-                        ? (isGroupNotificationsEnabled ? "text-primary" : "text-muted-foreground")
-                        : isPrivateChat
-                        ? (activeDm && !dmSettings[activeDm]?.muted ? "text-primary" : "text-muted-foreground")
-                        : (activeTopic && !topicSettings[activeTopic]?.muted ? "text-primary" : "text-muted-foreground")
-                    }`}
+                    className="shrink-0 rounded-full transition-colors h-12 w-12 text-muted-foreground hover:text-primary"
                     onClick={() => {
-                      if (isGroupChat) {
-                        // For group chats, toggle group-specific notifications
-                        if (!hasNotificationsEnabled) {
-                          // First need to enable push notifications globally
-                          setShowTopicPrompt(true);
-                        } else {
-                          handleToggleGroupNotifications();
-                        }
-                      } else if (isPrivateChat && activeDm) {
-                        // For DMs, toggle the mute status for this specific conversation
-                        if (!hasNotificationsEnabled) {
-                          // First need to enable push notifications globally
-                          setShowDmPrompt(true);
-                        } else {
-                          // Toggle mute status for this DM
-                          const currentMuted = dmSettings[activeDm]?.muted || false;
-                          handleMuteDm(activeDm, !currentMuted);
-                        }
-                      } else if (activeTopic) {
-                        // Topic notifications - toggle mute status
-                        if (!hasNotificationsEnabled) {
-                          setShowTopicPrompt(true);
-                        } else {
-                          const currentMuted = topicSettings[activeTopic]?.muted || false;
-                          handleMuteTopic(activeTopic, !currentMuted);
-                        }
-                      }
+                      toast({
+                        title: "GIFs Coming Soon!",
+                        description: "Stay tuned for this feature.",
+                      });
                     }}
-                    disabled={followLoading}
-                    title={
-                      isGroupChat
-                        ? (isGroupNotificationsEnabled ? "Mute group notifications" : "Enable group notifications")
-                        : isPrivateChat
-                        ? (activeDm && !dmSettings[activeDm]?.muted ? "Mute conversation" : "Unmute conversation")
-                        : (activeTopic && !topicSettings[activeTopic]?.muted ? "Mute topic" : "Unmute topic")
-                    }
+                    title="GIFs Coming Soon!"
                   >
-                    {followLoading ? (
-                      <Loader2 className="h-8 w-8 animate-spin" />
-                    ) : isGroupChat ? (
-                      isGroupNotificationsEnabled ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
-                    ) : isPrivateChat ? (
-                      (activeDm && !dmSettings[activeDm]?.muted) ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
-                    ) : (
-                      (activeTopic && !topicSettings[activeTopic]?.muted) ? <Bell className="h-8 w-8" /> : <BellOff className="h-8 w-8" />
-                    )}
+                    <span className="text-xs font-bold">GIF</span>
                   </Button>
                 )}
                 {/* Image/file upload button (not for AI chat) */}
