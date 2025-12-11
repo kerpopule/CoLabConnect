@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 69 - Fix badge when viewing chat, remove DM on connection removal
+// Version 70 - Fix comprehensive query invalidation for real-time connection state sync
 
-const CACHE_VERSION = 69;
+const CACHE_VERSION = 70;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker

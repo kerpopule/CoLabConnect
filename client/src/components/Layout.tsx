@@ -296,7 +296,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           filter: `following_id=eq.${user.id}`,
         },
         () => {
-          // Refetch pending requests count on any change
+          // Refetch pending requests count on any change - invalidate both with and without user.id
+          queryClient.invalidateQueries({ queryKey: ["pending-requests-count", user.id] });
           queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
         }
       )

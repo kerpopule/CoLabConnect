@@ -252,6 +252,29 @@ export default function Connections() {
   useEffect(() => {
     if (!user) return;
 
+    // Comprehensive invalidation for ALL connection-related queries across the app
+    const invalidateAllConnectionQueries = () => {
+      // Skip if we're doing a local mutation (wait for it to complete)
+      if (isMutatingRef.current) return;
+
+      // Connections page queries
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["connections", "incoming", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["connections", "outgoing", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["connections", "accepted", user.id] });
+
+      // Badge/notification counts
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+
+      // Directory page queries
+      queryClient.invalidateQueries({ queryKey: ["my-connections", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+
+      // UserProfile page queries
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+    };
+
     const channel = supabase
       .channel(`connections:${user.id}`)
       .on(
@@ -263,11 +286,8 @@ export default function Connections() {
           filter: `follower_id=eq.${user.id}`,
         },
         () => {
-          // Skip if we're doing a local mutation (wait for it to complete)
-          if (isMutatingRef.current) return;
-          // Refetch connections on any change
-          queryClient.invalidateQueries({ queryKey: ["connections"] });
-          queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+          // When I'm the requester and status changes (e.g., other user accepts/declines)
+          invalidateAllConnectionQueries();
         }
       )
       .on(
@@ -279,11 +299,8 @@ export default function Connections() {
           filter: `following_id=eq.${user.id}`,
         },
         () => {
-          // Skip if we're doing a local mutation (wait for it to complete)
-          if (isMutatingRef.current) return;
-          // Refetch connections on any change
-          queryClient.invalidateQueries({ queryKey: ["connections"] });
-          queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+          // When I'm the receiver and something changes
+          invalidateAllConnectionQueries();
         }
       )
       .subscribe();

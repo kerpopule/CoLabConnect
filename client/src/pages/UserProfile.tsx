@@ -210,6 +210,17 @@ export default function UserProfile() {
   useEffect(() => {
     if (!user || !id || user.id === id) return;
 
+    // Comprehensive invalidation for all connection-related queries
+    const invalidateAllConnectionQueries = () => {
+      queryClient.invalidateQueries({ queryKey: ["connection-status", user.id, id] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["connections", "outgoing", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["connections", "accepted", user.id] });
+    };
+
     const channel = supabase
       .channel(`connection-status:${user.id}:${id}`)
       .on(
@@ -223,7 +234,7 @@ export default function UserProfile() {
         (payload) => {
           // Check if this change involves the profile we're viewing
           if ((payload.new as any)?.following_id === id || (payload.old as any)?.following_id === id) {
-            queryClient.invalidateQueries({ queryKey: ["connection-status", user.id, id] });
+            invalidateAllConnectionQueries();
           }
         }
       )
@@ -238,7 +249,7 @@ export default function UserProfile() {
         (payload) => {
           // Check if this change involves the profile we're viewing
           if ((payload.new as any)?.follower_id === id || (payload.old as any)?.follower_id === id) {
-            queryClient.invalidateQueries({ queryKey: ["connection-status", user.id, id] });
+            invalidateAllConnectionQueries();
           }
         }
       )

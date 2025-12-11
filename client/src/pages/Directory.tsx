@@ -122,6 +122,16 @@ export default function Directory() {
   useEffect(() => {
     if (!user) return;
 
+    // Comprehensive invalidation for all connection-related queries
+    const invalidateAllConnectionQueries = () => {
+      queryClient.invalidateQueries({ queryKey: ["my-connections", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["connections", "outgoing", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["connections", "accepted", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+    };
+
     const channel = supabase
       .channel(`directory-connections:${user.id}`)
       .on(
@@ -133,8 +143,8 @@ export default function Directory() {
           filter: `follower_id=eq.${user.id}`,
         },
         () => {
-          // Refetch connections on any change
-          queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+          // When I'm the requester and status changes (e.g., other user accepts/declines)
+          invalidateAllConnectionQueries();
         }
       )
       .on(
@@ -146,8 +156,8 @@ export default function Directory() {
           filter: `following_id=eq.${user.id}`,
         },
         () => {
-          // Refetch connections on any change
-          queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+          // When I'm the receiver and something changes
+          invalidateAllConnectionQueries();
         }
       )
       .subscribe();
