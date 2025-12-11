@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 70 - Fix comprehensive query invalidation for real-time connection state sync
+// Version 71 - Force immediate refetch on realtime events + unique push notification tags
 
-const CACHE_VERSION = 70;
+const CACHE_VERSION = 71;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker

@@ -252,26 +252,22 @@ export default function Connections() {
   useEffect(() => {
     if (!user) return;
 
-    // Comprehensive invalidation for ALL connection-related queries across the app
+    // Force immediate refetch for real-time updates (decline, accept, etc.)
     const invalidateAllConnectionQueries = () => {
       // Skip if we're doing a local mutation (wait for it to complete)
       if (isMutatingRef.current) return;
 
-      // Connections page queries
-      queryClient.invalidateQueries({ queryKey: ["connections"] });
-      queryClient.invalidateQueries({ queryKey: ["connections", "incoming", user.id] });
-      queryClient.invalidateQueries({ queryKey: ["connections", "outgoing", user.id] });
-      queryClient.invalidateQueries({ queryKey: ["connections", "accepted", user.id] });
+      // Use refetchQueries for immediate update on this page's data
+      queryClient.refetchQueries({ queryKey: ["connections", "incoming", user.id] });
+      queryClient.refetchQueries({ queryKey: ["connections", "outgoing", user.id] });
+      queryClient.refetchQueries({ queryKey: ["connections", "accepted", user.id] });
 
-      // Badge/notification counts
+      // Invalidate broader queries for cross-page updates
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
       queryClient.invalidateQueries({ queryKey: ["pending-requests-count", user.id] });
       queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
-
-      // Directory page queries
       queryClient.invalidateQueries({ queryKey: ["my-connections", user.id] });
       queryClient.invalidateQueries({ queryKey: ["my-connections"] });
-
-      // UserProfile page queries
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
     };
 

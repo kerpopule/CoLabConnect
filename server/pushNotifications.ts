@@ -185,7 +185,7 @@ export async function notifyConnectionRequest(
     body: `${senderName} wants to connect with you`,
     icon: "/icon-192.png",
     badge: "/icon-192.png",
-    tag: `connection-${senderId}`,
+    tag: `connection-${senderId}-${Date.now()}`,
     requireInteraction: true,
     data: {
       type: "connection",

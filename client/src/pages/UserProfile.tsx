@@ -210,9 +210,11 @@ export default function UserProfile() {
   useEffect(() => {
     if (!user || !id || user.id === id) return;
 
-    // Comprehensive invalidation for all connection-related queries
+    // Force immediate refetch for real-time updates (decline, accept, etc.)
     const invalidateAllConnectionQueries = () => {
-      queryClient.invalidateQueries({ queryKey: ["connection-status", user.id, id] });
+      // Use refetchQueries for immediate update on this page's data
+      queryClient.refetchQueries({ queryKey: ["connection-status", user.id, id] });
+      // Invalidate other queries for cross-page updates
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       queryClient.invalidateQueries({ queryKey: ["my-connections", user.id] });
       queryClient.invalidateQueries({ queryKey: ["my-connections"] });

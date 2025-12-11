@@ -122,10 +122,12 @@ export default function Directory() {
   useEffect(() => {
     if (!user) return;
 
-    // Comprehensive invalidation for all connection-related queries
+    // Force immediate refetch for real-time updates (decline, accept, etc.)
     const invalidateAllConnectionQueries = () => {
-      queryClient.invalidateQueries({ queryKey: ["my-connections", user.id] });
-      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      // Use refetchQueries for immediate update on this page's data
+      queryClient.refetchQueries({ queryKey: ["my-connections", user.id] });
+      queryClient.refetchQueries({ queryKey: ["my-connections"] });
+      // Invalidate other queries for cross-page updates
       queryClient.invalidateQueries({ queryKey: ["connections"] });
       queryClient.invalidateQueries({ queryKey: ["connections", "outgoing", user.id] });
       queryClient.invalidateQueries({ queryKey: ["connections", "accepted", user.id] });
