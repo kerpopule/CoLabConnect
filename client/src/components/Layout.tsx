@@ -98,7 +98,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       return count || 0;
     },
     enabled: !!user,
-    refetchInterval: 30000, // Refresh every 30 seconds
+    staleTime: 5000, // 5 seconds - ensures fresh data on navigation
+    refetchInterval: 30000, // Refresh every 30 seconds as backup
   });
 
   // Fetch DM mute settings for filtering

@@ -122,6 +122,7 @@ export default function UserProfile() {
       return null;
     },
     enabled: !!user && !!id && user.id !== id,
+    staleTime: 5000, // 5 seconds - ensures fresh data on navigation
   });
 
   // Send connection request
@@ -160,8 +161,10 @@ export default function UserProfile() {
       return { action: "sent" };
     },
     onSuccess: (result) => {
+      // Invalidate ALL connection queries - don't miss any
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
       queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
 
       if (result?.action === "accepted") {
@@ -333,8 +336,11 @@ export default function UserProfile() {
       }
     },
     onSuccess: () => {
+      // Invalidate ALL connection queries - don't miss any
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
       queryClient.invalidateQueries({ queryKey: ["dms-with-history"] });
       setShowRemoveDialog(false);
       toast({

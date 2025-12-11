@@ -165,6 +165,7 @@ export default function Connections() {
       return data as ConnectionWithProfile[];
     },
     enabled: !!user,
+    staleTime: 5000, // 5 seconds - ensures fresh data
   });
 
   // Fetch outgoing pending requests (people I've requested to connect with)
@@ -187,6 +188,7 @@ export default function Connections() {
       return data as ConnectionWithProfile[];
     },
     enabled: !!user,
+    staleTime: 5000, // 5 seconds - ensures fresh data
   });
 
   // Fetch my connections (accepted)
@@ -243,6 +245,7 @@ export default function Connections() {
       return uniqueConnections;
     },
     enabled: !!user,
+    staleTime: 5000, // 5 seconds - ensures fresh data
   });
 
   // Track when we're doing a local mutation to avoid realtime overriding optimistic updates
@@ -448,8 +451,10 @@ export default function Connections() {
       return { previousIncoming, previousCount };
     },
     onSuccess: () => {
-      // Invalidate Directory's query so it shows updated connection status
-      queryClient.invalidateQueries({ queryKey: ["my-connections", user?.id] });
+      // Invalidate ALL connection queries - don't miss any
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       toast({
         title: "Request declined",
@@ -502,8 +507,10 @@ export default function Connections() {
       return { previousOutgoing };
     },
     onSuccess: () => {
-      // Invalidate Directory's query so it shows updated connection status
-      queryClient.invalidateQueries({ queryKey: ["my-connections", user?.id] });
+      // Invalidate ALL connection queries - don't miss any
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       toast({
         title: "Request cancelled",
@@ -556,7 +563,10 @@ export default function Connections() {
       return { previousConnections };
     },
     onSuccess: () => {
+      // Invalidate ALL connection queries - don't miss any
       queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       queryClient.invalidateQueries({ queryKey: ["private-chats"] });
       toast({

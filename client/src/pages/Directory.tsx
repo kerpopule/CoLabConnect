@@ -94,6 +94,7 @@ export default function Directory() {
       return data as Connection[];
     },
     enabled: !!user,
+    staleTime: 5000, // 5 seconds - ensures fresh data on navigation/refresh
   });
 
   // Helper to get connection status with a user
@@ -234,9 +235,11 @@ export default function Directory() {
       return { wasAccepted: false };
     },
     onSuccess: (result) => {
+      // Invalidate ALL connection queries everywhere for real-time consistency
       queryClient.invalidateQueries({ queryKey: ["connections"] });
       queryClient.invalidateQueries({ queryKey: ["my-connections"] });
       queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
 
       if (result?.wasAccepted) {
         toast({
