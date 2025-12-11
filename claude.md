@@ -197,6 +197,9 @@ VITE_SUPABASE_URL=https://xxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_ROLE_KEY=eyJ...  # Server-side only
 
+# Supabase Management API (for running migrations/SQL via CLI)
+SUPABASE_ACCESS_TOKEN=sbp_...     # Found in .env, used for schema changes
+
 # Optional - AI
 OPENROUTER_API_KEY=sk-or-...
 

@@ -4205,7 +4205,7 @@ export default function Chat() {
                         onTopicAdminKick={isGeneralTopic && isGeneralTopicAdmin ? (userId: string, userName: string) => setShowKickConfirm({ userId, userName }) : undefined}
                       >
                         <div className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}>
-                          <div className="relative shrink-0">
+                          <div className="relative shrink-0 self-start w-8 h-8">
                             <Avatar className="w-8 h-8">
                               <AvatarImage
                                 src={senderProfile?.avatar_url || undefined}
