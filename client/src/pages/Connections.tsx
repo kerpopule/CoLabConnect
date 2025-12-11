@@ -284,14 +284,9 @@ export default function Connections() {
       return { previousIncoming };
     },
     onSuccess: () => {
-      // Delay invalidation to let optimistic update settle
-      setTimeout(() => {
-        isMutatingRef.current = false;
-        queryClient.invalidateQueries({ queryKey: ["connections"] });
-        queryClient.invalidateQueries({ queryKey: ["connection-status"] });
-        queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
-        queryClient.invalidateQueries({ queryKey: ["my-connections"] });
-      }, 500);
+      isMutatingRef.current = false;
+      // Don't invalidate - trust the optimistic update
+      // Realtime subscription will handle any external changes
       toast({
         title: "Request declined",
       });
@@ -338,13 +333,9 @@ export default function Connections() {
       return { previousOutgoing };
     },
     onSuccess: () => {
-      // Delay invalidation to let optimistic update settle
-      setTimeout(() => {
-        isMutatingRef.current = false;
-        queryClient.invalidateQueries({ queryKey: ["connections"] });
-        queryClient.invalidateQueries({ queryKey: ["connection-status"] });
-        queryClient.invalidateQueries({ queryKey: ["my-connections"] });
-      }, 500);
+      isMutatingRef.current = false;
+      // Don't invalidate - trust the optimistic update
+      // Realtime subscription will handle any external changes
       toast({
         title: "Request cancelled",
       });

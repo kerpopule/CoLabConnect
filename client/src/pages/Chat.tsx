@@ -3720,12 +3720,15 @@ export default function Chat() {
               {activeTab === "dms" && activeDmProfile && (
                 <>
                   <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <Avatar className="h-6 w-6 shrink-0">
-                    <AvatarImage src={activeDmProfile.avatar_url || undefined} />
-                    <AvatarFallback className="text-[10px]">
-                      {getInitials(activeDmProfile.name)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="relative shrink-0">
+                    <Avatar className="h-6 w-6">
+                      <AvatarImage src={activeDmProfile.avatar_url || undefined} />
+                      <AvatarFallback className="text-[10px]">
+                        {getInitials(activeDmProfile.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <OnlineIndicator userId={activeDmProfile.id} className="absolute -bottom-0.5 -right-0.5" size="sm" />
+                  </div>
                   <span className="font-medium truncate">{activeDmProfile.name}</span>
                 </>
               )}
@@ -4218,7 +4221,7 @@ export default function Chat() {
                                 {getInitials(senderName)}
                               </AvatarFallback>
                             </Avatar>
-                            {!isOwn && senderId && <OnlineIndicator userId={senderId} className="absolute -bottom-0.5 -right-0.5" size="sm" />}
+                            {senderId && <OnlineIndicator userId={senderId} className="absolute -bottom-0.5 -right-0.5" size="sm" />}
                           </div>
                           <div className="max-w-[75%] space-y-1">
                             <div
