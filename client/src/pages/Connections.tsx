@@ -284,15 +284,36 @@ export default function Connections() {
         .eq("id", connectionId);
 
       if (error) throw error;
+      return connectionId;
+    },
+    onMutate: async (connectionId: string) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["connections", "outgoing", user?.id] });
+
+      // Snapshot the previous value
+      const previousOutgoing = queryClient.getQueryData(["connections", "outgoing", user?.id]);
+
+      // Optimistically remove from the list immediately
+      queryClient.setQueryData(
+        ["connections", "outgoing", user?.id],
+        (old: any) => old?.filter((c: any) => c.id !== connectionId) || []
+      );
+
+      return { previousOutgoing };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["connections"] });
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
       toast({
         title: "Request cancelled",
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, _connectionId, context) => {
+      // Rollback on error
+      if (context?.previousOutgoing) {
+        queryClient.setQueryData(["connections", "outgoing", user?.id], context.previousOutgoing);
+      }
       toast({
         variant: "destructive",
         title: "Failed to cancel request",
