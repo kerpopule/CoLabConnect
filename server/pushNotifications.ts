@@ -185,10 +185,10 @@ export async function notifyConnectionRequest(
       type: "connection",
       senderId,
       senderName,
-      url: `/profile/${senderId}`,
+      url: `/connections?tab=requests`,
     },
     actions: [
-      { action: "view", title: "View Profile" },
+      { action: "view", title: "View Requests" },
       { action: "dismiss", title: "Later" },
     ],
   });

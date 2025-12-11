@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 66 - Force clear all caches to fix Android PWA errors
+// Version 67 - Fix connection request push notification navigation
 
-const CACHE_VERSION = 66;
+const CACHE_VERSION = 67;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker
@@ -100,11 +100,13 @@ self.addEventListener('notificationclick', (event) => {
   const data = event.notification.data || {};
   let url = '/';
 
-  // Navigate based on notification type
-  if (data.type === 'dm') {
+  // Navigate based on notification data - prefer explicit url if provided
+  if (data.url) {
+    url = data.url;
+  } else if (data.type === 'dm') {
     url = `/chat?dm=${data.senderId}`;
   } else if (data.type === 'connection') {
-    url = `/profile/${data.senderId}`;
+    url = `/connections?tab=requests`;
   } else if (data.type === 'chat') {
     url = `/chat`;
   } else if (data.type === 'mention') {
@@ -115,8 +117,6 @@ self.addEventListener('notificationclick', (event) => {
     url = `/chat?tab=groups`;
   } else if (data.type === 'group_message') {
     url = `/chat?group=${data.groupId}`;
-  } else if (data.url) {
-    url = data.url;
   }
 
   event.waitUntil(

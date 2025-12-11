@@ -45,13 +45,29 @@ type ConnectionWithProfile = Connection & {
 };
 
 export default function Connections() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user, profile: currentUserProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [connectionToRemove, setConnectionToRemove] = useState<{ id: string; name: string } | null>(null);
   const [swipedConnection, setSwipedConnection] = useState<string | null>(null);
   const touchStartX = useRef<number>(0);
+
+  // Parse tab from URL query params (e.g., /connections?tab=requests)
+  const searchParams = new URLSearchParams(window.location.search);
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<string>(
+    tabFromUrl === "requests" || tabFromUrl === "pending" ? tabFromUrl : "connections"
+  );
+
+  // Update active tab when URL changes (e.g., from push notification navigation)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab === "requests" || tab === "pending") {
+      setActiveTab(tab);
+    }
+  }, [location]);
 
   // Fetch incoming connection requests (people who want to connect with me)
   const { data: incomingRequests, isLoading: loadingIncoming } = useQuery({
@@ -476,7 +492,7 @@ export default function Connections() {
         </p>
       </div>
 
-      <Tabs defaultValue="connections" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full justify-start bg-muted/50 p-1 rounded-xl overflow-x-auto">
           <TabsTrigger value="connections" className="rounded-lg flex items-center gap-2">
             <UserCheck className="h-4 w-4" />
