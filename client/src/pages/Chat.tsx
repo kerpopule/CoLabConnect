@@ -4419,6 +4419,8 @@ export default function Chat() {
                     const canSiteAdminDelete = isGeneralTopicAdmin && !isOwn && !isPrivateChat;
                     const siteAdminDeleteHandler = isGroupChat ? handleAdminDeleteGroupMessage : handleAdminDeleteMessage;
 
+                    const isMedia = isImageUrl(msg.content) || isFileUrl(msg.content);
+
                     return (
                       <MessageWrapper
                         key={msg.id}
@@ -4426,6 +4428,7 @@ export default function Chat() {
                         content={msg.content}
                         isOwnMessage={isOwn}
                         isDeleted={isDeleted}
+                        isMedia={isMedia}
                         onEdit={editHandler}
                         onDelete={deleteHandler}
                         senderName={senderName}
@@ -4510,6 +4513,7 @@ export default function Chat() {
                                   content={msg.content}
                                   isOwnMessage={isOwn}
                                   isDeleted={isDeleted}
+                                  isMedia={isMedia}
                                   onEdit={editHandler}
                                   onDelete={deleteHandler}
                                 />

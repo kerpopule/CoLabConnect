@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 73 - Add connection counts, directory sorting, fix connection request push notifications
+// Version 74 - Fix inline message editing to edit in bubble, disable edit for media
 
-const CACHE_VERSION = 73;
+const CACHE_VERSION = 74;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker

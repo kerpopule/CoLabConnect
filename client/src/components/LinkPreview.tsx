@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { ExternalLink, Loader2 } from "lucide-react";
+import { useEditing, InlineEditInput } from "@/components/MessageContextMenu";
 
 interface LinkPreviewProps {
   url: string;
@@ -162,12 +163,16 @@ const MESSAGE_CHAR_LIMIT = 240;
 // Message content with inline links and previews
 export function MessageContent({ content }: { content: string }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const editing = useEditing();
   const parts = parseMessageWithLinks(content);
   const urls = extractUrls(content);
   const firstUrl = urls[0]; // Only show preview for the first URL
 
   const isLongMessage = content.length > MESSAGE_CHAR_LIMIT;
-  const displayContent = isLongMessage && !isExpanded
+
+  // When editing, always show full content (auto-expand)
+  const effectivelyExpanded = isExpanded || (editing?.isEditing ?? false);
+  const displayContent = isLongMessage && !effectivelyExpanded
     ? content.slice(0, MESSAGE_CHAR_LIMIT)
     : content;
   const displayParts = parseMessageWithLinks(displayContent);
@@ -193,6 +198,15 @@ export function MessageContent({ content }: { content: string }) {
       document.removeEventListener('click', handleClickOutside);
     };
   }, [isExpanded]);
+
+  // If editing, show the inline edit input instead of the normal content
+  if (editing?.isEditing) {
+    return (
+      <div>
+        <InlineEditInput />
+      </div>
+    );
+  }
 
   return (
     <div>

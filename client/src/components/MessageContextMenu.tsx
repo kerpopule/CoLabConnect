@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, createContext, useContext } from "react";
 import { Edit2, Trash2, X, Check, Loader2, Reply, VolumeX, Volume2, UserMinus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,69 +19,55 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+// Context for inline editing state - allows parent to know when editing is active
+interface EditingContextType {
+  isEditing: boolean;
+  editContent: string;
+  setEditContent: (content: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  isSubmitting: boolean;
+}
+
+const EditingContext = createContext<EditingContextType | null>(null);
+
+export function useEditing() {
+  return useContext(EditingContext);
+}
+
 interface MessageActionsProps {
   messageId: string;
   content: string;
   isOwnMessage: boolean;
   isDeleted: boolean;
+  isMedia?: boolean; // If true, don't show edit option (only delete)
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
   onEditingChange?: (isEditing: boolean) => void;
 }
 
 /**
- * Message actions dropdown - triggered by long press on mobile or right-click on desktop
+ * Message actions dropdown - triggered by hover on desktop
+ * Note: This component is used for desktop hover actions. Inline editing is handled by MessageWrapper.
  */
 export function MessageActions({
   messageId,
   content,
   isOwnMessage,
   isDeleted,
+  isMedia = false,
   onEdit,
   onDelete,
   onEditingChange,
 }: MessageActionsProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(content);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Focus input when editing starts
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      setTimeout(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      }, 50);
-    }
-    onEditingChange?.(isEditing);
-  }, [isEditing, onEditingChange]);
 
   // Don't show for deleted messages or others' messages
   if (!isOwnMessage || isDeleted) {
     return null;
   }
-
-  const handleEdit = async () => {
-    if (!editContent.trim() || editContent === content) {
-      setIsEditing(false);
-      setEditContent(content);
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      await onEdit(messageId, editContent.trim());
-      setIsEditing(false);
-    } catch (error) {
-      console.error("Failed to edit message:", error);
-      setEditContent(content);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const handleDelete = async () => {
     setIsSubmitting(true);
@@ -95,57 +81,10 @@ export function MessageActions({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleEdit();
-    } else if (e.key === "Escape") {
-      setIsEditing(false);
-      setEditContent(content);
-    }
+  const handleStartEdit = () => {
+    onEditingChange?.(true);
+    setShowMenu(false);
   };
-
-  // Edit mode UI
-  if (isEditing) {
-    return (
-      <div className="flex items-center gap-2 mt-2">
-        <Input
-          ref={inputRef}
-          value={editContent}
-          onChange={(e) => setEditContent(e.target.value)}
-          onKeyDown={handleKeyDown}
-          className="flex-1 text-sm h-8"
-          disabled={isSubmitting}
-          placeholder="Edit message..."
-        />
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-8 w-8 shrink-0"
-          onClick={handleEdit}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Check className="h-4 w-4 text-green-500" />
-          )}
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-8 w-8 shrink-0"
-          onClick={() => {
-            setIsEditing(false);
-            setEditContent(content);
-          }}
-          disabled={isSubmitting}
-        >
-          <X className="h-4 w-4 text-muted-foreground" />
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -166,17 +105,15 @@ export function MessageActions({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-32">
-          <DropdownMenuItem
-            onClick={() => {
-              setEditContent(content);
-              setIsEditing(true);
-              setShowMenu(false);
-            }}
-            className="flex items-center gap-2"
-          >
-            <Edit2 className="h-4 w-4" />
-            Edit
-          </DropdownMenuItem>
+          {!isMedia && (
+            <DropdownMenuItem
+              onClick={handleStartEdit}
+              className="flex items-center gap-2"
+            >
+              <Edit2 className="h-4 w-4" />
+              Edit
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onClick={() => {
               setShowDeleteDialog(true);
@@ -226,6 +163,7 @@ interface MessageWrapperProps {
   content: string;
   isOwnMessage: boolean;
   isDeleted: boolean;
+  isMedia?: boolean; // If true, don't show edit option (only delete)
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
   // New props for Reply/Mute on others' messages
@@ -252,6 +190,7 @@ export function MessageWrapper({
   content,
   isOwnMessage,
   isDeleted,
+  isMedia = false,
   onEdit,
   onDelete,
   senderName,
@@ -270,8 +209,63 @@ export function MessageWrapper({
 }: MessageWrapperProps) {
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(content);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea and focus when editing starts
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      // Focus and select all text
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.select();
+        // Auto-resize to fit content
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+        }
+      }, 50);
+    }
+  }, [isEditing]);
+
+  // Handle save
+  const handleSave = async () => {
+    if (!editContent.trim() || editContent === content) {
+      setIsEditing(false);
+      setEditContent(content);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onEdit(messageId, editContent.trim());
+      setIsEditing(false);
+    } catch (error) {
+      console.error("Failed to edit message:", error);
+      setEditContent(content);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle cancel
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditContent(content);
+  };
+
+  // Handle keyboard shortcuts
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === "Escape") {
+      handleCancel();
+    }
+  };
 
   // Don't add interactions for deleted messages
   // For DMs, only show actions for own messages (edit/delete)
@@ -320,141 +314,55 @@ export function MessageWrapper({
     setShowActions(true);
   };
 
-  return (
-    <div
-      className="group relative select-none"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchEnd}
-      onContextMenu={handleContextMenu}
-    >
-      {children}
+  // Provide editing context to children
+  const editingContext: EditingContextType = {
+    isEditing,
+    editContent,
+    setEditContent,
+    onSave: handleSave,
+    onCancel: handleCancel,
+    isSubmitting,
+  };
 
-      {/* Actions overlay for long-press on mobile */}
-      {showActions && !isEditing && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm rounded-2xl flex items-center justify-center gap-4 z-10">
-          {isOwnMessage ? (
-            // Own message actions: Edit & Delete
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setShowActions(false);
-                  setIsEditing(true);
-                }}
-                className="flex items-center gap-2"
-              >
-                <Edit2 className="h-4 w-4" />
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={async () => {
-                  try {
-                    await onDelete(messageId);
-                  } catch (error) {
-                    console.error("Failed to delete:", error);
-                  }
-                  setShowActions(false);
-                }}
-                className="flex items-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </Button>
-            </>
-          ) : (
-            // Others' message actions: Reply & Mute/Unmute & Kick (admin only)
-            <>
-              {onReply && senderName && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    onReply(senderName);
-                    setShowActions(false);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <Reply className="h-4 w-4" />
-                  Reply
-                </Button>
-              )}
-              {senderId && (isMuted ? onUnmute : onMute) && (
-                <Button
-                  size="sm"
-                  variant={isMuted ? "outline" : "secondary"}
-                  onClick={async () => {
-                    try {
-                      if (isMuted && onUnmute) {
-                        await onUnmute(senderId);
-                      } else if (onMute) {
-                        await onMute(senderId);
-                      }
-                    } catch (error) {
-                      console.error("Failed to mute/unmute:", error);
-                    }
-                    setShowActions(false);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  {isMuted ? (
-                    <>
-                      <Volume2 className="h-4 w-4" />
-                      Unmute
-                    </>
-                  ) : (
-                    <>
-                      <VolumeX className="h-4 w-4" />
-                      Mute
-                    </>
-                  )}
-                </Button>
-              )}
-              {/* Kick button for group chat admins */}
-              {isGroupChat && isAdmin && senderId && senderName && onKick && (
+  return (
+    <EditingContext.Provider value={editingContext}>
+      <div
+        className="group relative select-none"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onContextMenu={handleContextMenu}
+      >
+        {children}
+
+        {/* Actions overlay for long-press on mobile */}
+        {showActions && !isEditing && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm rounded-2xl flex items-center justify-center gap-4 z-10">
+            {isOwnMessage ? (
+              // Own message actions: Edit (if not media) & Delete
+              <>
+                {!isMedia && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setShowActions(false);
+                      setEditContent(content);
+                      setIsEditing(true);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="destructive"
                   onClick={async () => {
                     try {
-                      await onKick(senderId, senderName);
-                    } catch (error) {
-                      console.error("Failed to kick:", error);
-                    }
-                    setShowActions(false);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <UserMinus className="h-4 w-4" />
-                  Kick
-                </Button>
-              )}
-              {/* Topic admin actions: Kick & Delete */}
-              {isTopicAdmin && senderId && senderName && onTopicAdminKick && (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => {
-                    onTopicAdminKick(senderId, senderName);
-                    setShowActions(false);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <UserMinus className="h-4 w-4" />
-                  Kick
-                </Button>
-              )}
-              {isTopicAdmin && onTopicAdminDelete && (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={async () => {
-                    try {
-                      await onTopicAdminDelete(messageId);
+                      await onDelete(messageId);
                     } catch (error) {
                       console.error("Failed to delete:", error);
                     }
@@ -465,112 +373,201 @@ export function MessageWrapper({
                   <Trash2 className="h-4 w-4" />
                   Delete
                 </Button>
-              )}
-            </>
-          )}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setShowActions(false)}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
-
-      {/* Edit input below the message */}
-      {isEditing && (
-        <EditInput
-          content={content}
-          onSave={async (newContent) => {
-            await onEdit(messageId, newContent);
-            setIsEditing(false);
-          }}
-          onCancel={() => setIsEditing(false)}
-        />
-      )}
-    </div>
+              </>
+            ) : (
+              // Others' message actions: Reply & Mute/Unmute & Kick (admin only)
+              <>
+                {onReply && senderName && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onReply(senderName);
+                      setShowActions(false);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Reply className="h-4 w-4" />
+                    Reply
+                  </Button>
+                )}
+                {senderId && (isMuted ? onUnmute : onMute) && (
+                  <Button
+                    size="sm"
+                    variant={isMuted ? "outline" : "secondary"}
+                    onClick={async () => {
+                      try {
+                        if (isMuted && onUnmute) {
+                          await onUnmute(senderId);
+                        } else if (onMute) {
+                          await onMute(senderId);
+                        }
+                      } catch (error) {
+                        console.error("Failed to mute/unmute:", error);
+                      }
+                      setShowActions(false);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    {isMuted ? (
+                      <>
+                        <Volume2 className="h-4 w-4" />
+                        Unmute
+                      </>
+                    ) : (
+                      <>
+                        <VolumeX className="h-4 w-4" />
+                        Mute
+                      </>
+                    )}
+                  </Button>
+                )}
+                {/* Kick button for group chat admins */}
+                {isGroupChat && isAdmin && senderId && senderName && onKick && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={async () => {
+                      try {
+                        await onKick(senderId, senderName);
+                      } catch (error) {
+                        console.error("Failed to kick:", error);
+                      }
+                      setShowActions(false);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <UserMinus className="h-4 w-4" />
+                    Kick
+                  </Button>
+                )}
+                {/* Topic admin actions: Kick & Delete */}
+                {isTopicAdmin && senderId && senderName && onTopicAdminKick && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      onTopicAdminKick(senderId, senderName);
+                      setShowActions(false);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <UserMinus className="h-4 w-4" />
+                    Kick
+                  </Button>
+                )}
+                {isTopicAdmin && onTopicAdminDelete && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={async () => {
+                      try {
+                        await onTopicAdminDelete(messageId);
+                      } catch (error) {
+                        console.error("Failed to delete:", error);
+                      }
+                      setShowActions(false);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </Button>
+                )}
+              </>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowActions(false)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+    </EditingContext.Provider>
   );
 }
 
 /**
- * Edit input component
+ * Inline edit component - renders inside the message bubble when editing
+ * Use this inside the message content area, checking useEditing() context
  */
-function EditInput({
-  content,
-  onSave,
-  onCancel,
-}: {
-  content: string;
-  onSave: (content: string) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(content);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+export function InlineEditInput() {
+  const editing = useEditing();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }, 50);
-  }, []);
-
-  const handleSave = async () => {
-    if (!value.trim() || value === content) {
-      onCancel();
-      return;
+    if (editing?.isEditing && textareaRef.current) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        // Move cursor to end
+        const len = textareaRef.current?.value.length || 0;
+        textareaRef.current?.setSelectionRange(len, len);
+        // Auto-resize
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+        }
+      }, 50);
     }
-    setIsSubmitting(true);
-    try {
-      await onSave(value.trim());
-    } catch (error) {
-      console.error("Failed to save:", error);
-    } finally {
-      setIsSubmitting(false);
+  }, [editing?.isEditing]);
+
+  if (!editing || !editing.isEditing) return null;
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    editing.setEditContent(e.target.value);
+    // Auto-resize
+    e.target.style.height = 'auto';
+    e.target.style.height = e.target.scrollHeight + 'px';
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      editing.onSave();
+    } else if (e.key === "Escape") {
+      editing.onCancel();
     }
   };
 
   return (
-    <div className="flex items-center gap-2 mt-2">
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSave();
-          } else if (e.key === "Escape") {
-            onCancel();
-          }
-        }}
-        className="flex-1 text-sm h-8"
-        disabled={isSubmitting}
+    <div className="space-y-2">
+      <Textarea
+        ref={textareaRef}
+        value={editing.editContent}
+        onChange={handleTextareaChange}
+        onKeyDown={handleKeyDown}
+        className="min-h-[60px] text-[15px] leading-relaxed resize-none bg-transparent border-0 p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+        disabled={editing.isSubmitting}
         placeholder="Edit message..."
+        rows={1}
       />
-      <Button
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 shrink-0"
-        onClick={handleSave}
-        disabled={isSubmitting}
-      >
-        {isSubmitting ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Check className="h-4 w-4 text-green-500" />
-        )}
-      </Button>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 shrink-0"
-        onClick={onCancel}
-        disabled={isSubmitting}
-      >
-        <X className="h-4 w-4 text-muted-foreground" />
-      </Button>
+      <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/50">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-xs"
+          onClick={editing.onCancel}
+          disabled={editing.isSubmitting}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          className="h-7 px-3 text-xs"
+          onClick={editing.onSave}
+          disabled={editing.isSubmitting}
+        >
+          {editing.isSubmitting ? (
+            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+          ) : (
+            <Check className="h-3 w-3 mr-1" />
+          )}
+          Save
+        </Button>
+      </div>
     </div>
   );
 }
