@@ -69,6 +69,82 @@ export default function Connections() {
     }
   }, [location]);
 
+  // Handle pending navigation from push notifications
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pendingNavigation");
+    if (pending?.includes("/connections")) {
+      sessionStorage.removeItem("pendingNavigation");
+      const params = new URLSearchParams(pending.split("?")[1] || "");
+      const tab = params.get("tab");
+      if (tab === "requests" || tab === "pending") {
+        setActiveTab(tab);
+      }
+    }
+
+    // Also listen for push notification navigation events
+    const handlePushNav = (event: CustomEvent) => {
+      const url = event.detail?.url || "";
+      if (url.includes("/connections")) {
+        const params = new URLSearchParams(url.split("?")[1] || "");
+        const tab = params.get("tab");
+        if (tab === "requests" || tab === "pending") {
+          setActiveTab(tab);
+        }
+      }
+    };
+
+    window.addEventListener("pushnotification-navigate", handlePushNav as EventListener);
+    return () => {
+      window.removeEventListener("pushnotification-navigate", handlePushNav as EventListener);
+    };
+  }, []);
+
+  // Report viewing status for smart push notification suppression
+  useEffect(() => {
+    if (!user || activeTab !== "requests") return;
+
+    // Report viewing requests tab
+    fetch("/api/chat/viewing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user.id,
+        chatType: "connections",
+        chatId: "requests",
+        viewing: true,
+      }),
+    }).catch(console.error);
+
+    // Heartbeat to maintain viewing status
+    const heartbeatInterval = setInterval(() => {
+      fetch("/api/chat/viewing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          chatType: "connections",
+          chatId: "requests",
+          viewing: true,
+        }),
+      }).catch(console.error);
+    }, 15000);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      // Report no longer viewing
+      fetch("/api/chat/viewing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          chatType: "connections",
+          chatId: "requests",
+          viewing: false,
+        }),
+      }).catch(console.error);
+    };
+  }, [user, activeTab]);
+
   // Fetch incoming connection requests (people who want to connect with me)
   const { data: incomingRequests, isLoading: loadingIncoming } = useQuery({
     queryKey: ["connections", "incoming", user?.id],
@@ -257,10 +333,35 @@ export default function Connections() {
       // Return the original requester's ID so we can notify them
       return { requesterId: connection.follower_id };
     },
+    onMutate: async (connectionId: string) => {
+      isMutatingRef.current = true;
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["connections", "incoming", user?.id] });
+      await queryClient.cancelQueries({ queryKey: ["pending-requests-count", user?.id] });
+
+      // Snapshot previous values
+      const previousIncoming = queryClient.getQueryData(["connections", "incoming", user?.id]);
+      const previousCount = queryClient.getQueryData(["pending-requests-count", user?.id]);
+
+      // Optimistically remove from incoming list
+      queryClient.setQueryData(
+        ["connections", "incoming", user?.id],
+        (old: any) => old?.filter((c: any) => c.id !== connectionId) || []
+      );
+
+      // Optimistically update pending count
+      queryClient.setQueryData(
+        ["pending-requests-count", user?.id],
+        (old: number) => Math.max(0, (old || 1) - 1)
+      );
+
+      return { previousIncoming, previousCount };
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["connections"] });
       queryClient.invalidateQueries({ queryKey: ["pending-requests-count"] });
       queryClient.invalidateQueries({ queryKey: ["connection-status"] });
+      queryClient.invalidateQueries({ queryKey: ["my-connections"] });
       toast({
         title: "Connection accepted!",
         description: "You are now connected.",
@@ -279,12 +380,22 @@ export default function Connections() {
         }).catch(console.error);
       }
     },
-    onError: (error: any) => {
+    onError: (error: any, _connectionId, context) => {
+      // Rollback on error
+      if (context?.previousIncoming) {
+        queryClient.setQueryData(["connections", "incoming", user?.id], context.previousIncoming);
+      }
+      if (context?.previousCount !== undefined) {
+        queryClient.setQueryData(["pending-requests-count", user?.id], context.previousCount);
+      }
       toast({
         variant: "destructive",
         title: "Failed to accept",
         description: error.message,
       });
+    },
+    onSettled: () => {
+      isMutatingRef.current = false;
     },
   });
 
@@ -303,9 +414,11 @@ export default function Connections() {
       isMutatingRef.current = true;
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ["connections", "incoming", user?.id] });
+      await queryClient.cancelQueries({ queryKey: ["pending-requests-count", user?.id] });
 
-      // Snapshot the previous value
+      // Snapshot the previous values
       const previousIncoming = queryClient.getQueryData(["connections", "incoming", user?.id]);
+      const previousCount = queryClient.getQueryData(["pending-requests-count", user?.id]);
 
       // Optimistically remove from the list immediately
       queryClient.setQueryData(
@@ -313,27 +426,38 @@ export default function Connections() {
         (old: any) => old?.filter((c: any) => c.id !== connectionId) || []
       );
 
-      return { previousIncoming };
+      // Optimistically update pending count
+      queryClient.setQueryData(
+        ["pending-requests-count", user?.id],
+        (old: number) => Math.max(0, (old || 1) - 1)
+      );
+
+      return { previousIncoming, previousCount };
     },
     onSuccess: () => {
-      isMutatingRef.current = false;
       // Invalidate Directory's query so it shows updated connection status
       queryClient.invalidateQueries({ queryKey: ["my-connections", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       toast({
         title: "Request declined",
       });
     },
     onError: (error: any, _connectionId, context) => {
-      isMutatingRef.current = false;
       // Rollback on error
       if (context?.previousIncoming) {
         queryClient.setQueryData(["connections", "incoming", user?.id], context.previousIncoming);
+      }
+      if (context?.previousCount !== undefined) {
+        queryClient.setQueryData(["pending-requests-count", user?.id], context.previousCount);
       }
       toast({
         variant: "destructive",
         title: "Failed to decline",
         description: error.message,
       });
+    },
+    onSettled: () => {
+      isMutatingRef.current = false;
     },
   });
 
@@ -365,15 +489,14 @@ export default function Connections() {
       return { previousOutgoing };
     },
     onSuccess: () => {
-      isMutatingRef.current = false;
       // Invalidate Directory's query so it shows updated connection status
       queryClient.invalidateQueries({ queryKey: ["my-connections", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["connection-status"] });
       toast({
         title: "Request cancelled",
       });
     },
     onError: (error: any, _connectionId, context) => {
-      isMutatingRef.current = false;
       // Rollback on error
       if (context?.previousOutgoing) {
         queryClient.setQueryData(["connections", "outgoing", user?.id], context.previousOutgoing);
@@ -383,6 +506,9 @@ export default function Connections() {
         title: "Failed to cancel request",
         description: error.message,
       });
+    },
+    onSettled: () => {
+      isMutatingRef.current = false;
     },
   });
 

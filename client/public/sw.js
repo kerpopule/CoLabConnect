@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 67 - Fix connection request push notification navigation
+// Version 68 - Add global navigation for in-app push handling
 
-const CACHE_VERSION = 67;
+const CACHE_VERSION = 68;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker

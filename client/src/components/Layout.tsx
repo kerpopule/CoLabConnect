@@ -605,6 +605,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   }, [location, user]);
 
+  // Expose global navigation function for push notification handling
+  useEffect(() => {
+    (window as any).__colabNavigate = setLocation;
+    return () => {
+      delete (window as any).__colabNavigate;
+    };
+  }, [setLocation]);
+
   // Sidebar collapse/expand behavior for desktop and tablet
   useEffect(() => {
     const sidebar = sidebarRef.current;

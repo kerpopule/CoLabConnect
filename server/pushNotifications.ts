@@ -162,6 +162,12 @@ export async function notifyConnectionRequest(
   senderId: string,
   senderName: string
 ): Promise<void> {
+  // Check if user is currently viewing connection requests (suppress notification)
+  if (isUserViewing("connections", "requests", receiverId)) {
+    console.log(`[Push] Skipping connection request notification - user ${receiverId} is viewing requests`);
+    return;
+  }
+
   // Check if user has connection notifications enabled
   const { data: prefs } = await supabase
     .from("notification_preferences")
@@ -200,6 +206,12 @@ export async function notifyConnectionAccepted(
   accepterId: string,
   accepterName: string
 ): Promise<void> {
+  // Check if user is currently viewing the accepter's profile (suppress notification)
+  if (isUserViewing("profile", accepterId, receiverId)) {
+    console.log(`[Push] Skipping connection accepted notification - user ${receiverId} is viewing profile ${accepterId}`);
+    return;
+  }
+
   // Check if user has connection notifications enabled
   const { data: prefs } = await supabase
     .from("notification_preferences")

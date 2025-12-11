@@ -206,6 +206,95 @@ export default function UserProfile() {
     }
   }, [pendingConnect, user, id, connectionStatus, sendRequest]);
 
+  // Real-time subscription for connection status changes (so requester sees immediate updates)
+  useEffect(() => {
+    if (!user || !id || user.id === id) return;
+
+    const channel = supabase
+      .channel(`connection-status:${user.id}:${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "connections",
+          filter: `follower_id=eq.${user.id}`,
+        },
+        (payload) => {
+          // Check if this change involves the profile we're viewing
+          if ((payload.new as any)?.following_id === id || (payload.old as any)?.following_id === id) {
+            queryClient.invalidateQueries({ queryKey: ["connection-status", user.id, id] });
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "connections",
+          filter: `following_id=eq.${user.id}`,
+        },
+        (payload) => {
+          // Check if this change involves the profile we're viewing
+          if ((payload.new as any)?.follower_id === id || (payload.old as any)?.follower_id === id) {
+            queryClient.invalidateQueries({ queryKey: ["connection-status", user.id, id] });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, id, queryClient]);
+
+  // Report viewing status for smart push notification suppression
+  useEffect(() => {
+    if (!user || !id || user.id === id) return;
+
+    // Report viewing this profile
+    fetch("/api/chat/viewing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user.id,
+        chatType: "profile",
+        chatId: id,
+        viewing: true,
+      }),
+    }).catch(console.error);
+
+    // Heartbeat to maintain viewing status
+    const heartbeatInterval = setInterval(() => {
+      fetch("/api/chat/viewing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          chatType: "profile",
+          chatId: id,
+          viewing: true,
+        }),
+      }).catch(console.error);
+    }, 15000);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      // Report no longer viewing
+      fetch("/api/chat/viewing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          chatType: "profile",
+          chatId: id,
+          viewing: false,
+        }),
+      }).catch(console.error);
+    };
+  }, [user, id]);
+
   // Remove connection mutation
   const removeConnection = useMutation({
     mutationFn: async () => {

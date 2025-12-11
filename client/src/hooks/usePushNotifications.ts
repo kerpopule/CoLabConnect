@@ -67,12 +67,22 @@ export function usePushNotifications() {
         if (url.startsWith('/')) {
           // Store in sessionStorage as backup for page reload scenarios
           sessionStorage.setItem('pendingNavigation', url);
-          // Use history.pushState + dispatch popstate to trigger React Router navigation
-          window.history.pushState({}, '', url);
-          // Dispatch a custom event that components can listen to
+
+          // Try to use the global navigate function if available (set by Layout.tsx)
+          // This is the most reliable way to navigate within wouter
+          if (typeof (window as any).__colabNavigate === 'function') {
+            console.log('[Push] Navigating via global function to:', url);
+            (window as any).__colabNavigate(url);
+          } else {
+            // Fallback: Use history.pushState + dispatch popstate
+            console.log('[Push] Navigating via pushState to:', url);
+            window.history.pushState({}, '', url);
+            // Also dispatch popstate to trigger useSearch/useLocation updates
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }
+
+          // Dispatch a custom event that components can listen to for tab changes etc.
           window.dispatchEvent(new CustomEvent('pushnotification-navigate', { detail: { url } }));
-          // Also dispatch popstate to trigger useSearch/useLocation updates
-          window.dispatchEvent(new PopStateEvent('popstate'));
         } else {
           window.location.href = url;
         }
