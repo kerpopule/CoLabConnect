@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { QRCodeButton } from "./QRCodeButton";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
+import { NotificationPermissionPrompt } from "./NotificationPermissionPrompt";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -794,6 +795,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* PWA Install Prompt - shows on first login and weekly until installed */}
       <PWAInstallPrompt isLoggedIn={!!user} />
+
+      {/* Notification Permission Prompt - shows for PWA users and first-time web users */}
+      <NotificationPermissionPrompt isLoggedIn={!!user} />
     </div>
   );
 }
