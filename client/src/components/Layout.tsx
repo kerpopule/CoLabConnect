@@ -42,6 +42,46 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Track currently viewed chat to exclude from badge counts
+  const [currentChatView, setCurrentChatView] = useState<{
+    activeTab?: string;
+    viewMode?: string;
+    activeDm?: string | null;
+    activeGroup?: string | null;
+    activeTopic?: string | null;
+  } | null>(null);
+
+  // Listen for chat state changes from Chat.tsx (stored in sessionStorage)
+  useEffect(() => {
+    const updateChatView = () => {
+      try {
+        const cached = sessionStorage.getItem("colab-chat-state");
+        if (cached) {
+          setCurrentChatView(JSON.parse(cached));
+        } else {
+          setCurrentChatView(null);
+        }
+      } catch {
+        setCurrentChatView(null);
+      }
+    };
+
+    // Initial load
+    updateChatView();
+
+    // Listen for storage events (from same tab via custom event)
+    const handleStorageChange = () => updateChatView();
+    window.addEventListener("chat-state-changed", handleStorageChange);
+
+    // Also poll when on chat page (sessionStorage doesn't fire events in same tab)
+    const interval = setInterval(updateChatView, 1000);
+
+    return () => {
+      window.removeEventListener("chat-state-changed", handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
+
   // Fetch pending connection requests count
   const { data: pendingRequestsCount = 0 } = useQuery({
     queryKey: ["pending-requests-count", user?.id],
@@ -80,9 +120,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
     enabled: !!user,
   });
 
-  // Fetch unread private messages count (DMs) - excludes muted conversations
+  // Check if currently viewing a specific DM
+  const isViewingDm = currentChatView?.viewMode === "chat" &&
+                      currentChatView?.activeTab === "dms" &&
+                      currentChatView?.activeDm;
+
+  // Fetch unread private messages count (DMs) - excludes muted conversations and currently viewed DM
   const { data: unreadDmCount = 0 } = useQuery({
-    queryKey: ["unread-messages-count", user?.id, dmMuteSettings],
+    queryKey: ["unread-messages-count", user?.id, dmMuteSettings, isViewingDm ? currentChatView?.activeDm : null],
     queryFn: async () => {
       if (!user) return 0;
 
@@ -95,17 +140,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       if (error || !data) return 0;
 
-      // Filter out messages from muted senders
-      const unmutedMessages = data.filter(msg => !dmMuteSettings[msg.sender_id]);
+      // Filter out messages from muted senders and currently viewed DM
+      const unmutedMessages = data.filter(msg => {
+        if (dmMuteSettings[msg.sender_id]) return false;
+        // Exclude messages from currently viewed DM
+        if (isViewingDm && msg.sender_id === currentChatView?.activeDm) return false;
+        return true;
+      });
       return unmutedMessages.length;
     },
     enabled: !!user,
     refetchInterval: 15000, // Refresh every 15 seconds
   });
 
-  // Fetch unread group messages count + pending invites (excludes muted groups)
+  // Check if currently viewing a specific group
+  const isViewingGroup = currentChatView?.viewMode === "chat" &&
+                         currentChatView?.activeTab === "groups" &&
+                         currentChatView?.activeGroup;
+
+  // Fetch unread group messages count + pending invites (excludes muted groups and currently viewed group)
   const { data: unreadGroupCount = 0 } = useQuery({
-    queryKey: ["unread-group-count", user?.id],
+    queryKey: ["unread-group-count", user?.id, isViewingGroup ? currentChatView?.activeGroup : null],
     queryFn: async () => {
       if (!user) return 0;
 
@@ -122,6 +177,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       for (const membership of memberships) {
         // Skip muted groups
         if (membership.muted) continue;
+        // Skip currently viewed group
+        if (isViewingGroup && membership.group_id === currentChatView?.activeGroup) continue;
 
         if (membership.status === "pending") {
           // Pending invites count as 1 unread each
@@ -150,9 +207,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Fetch unread topic messages count (General channels) - excludes muted topics
+  // Check if currently viewing a specific topic
+  const isViewingTopic = currentChatView?.viewMode === "chat" &&
+                         currentChatView?.activeTab === "general" &&
+                         currentChatView?.activeTopic;
+
+  // Fetch unread topic messages count (General channels) - excludes muted topics and currently viewed topic
   const { data: unreadTopicCount = 0 } = useQuery({
-    queryKey: ["unread-topic-count", user?.id],
+    queryKey: ["unread-topic-count", user?.id, isViewingTopic ? currentChatView?.activeTopic : null],
     queryFn: async () => {
       if (!user) return 0;
 
@@ -190,6 +252,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       for (const topic of topics) {
         // Skip muted topics
         if (topicMuteMap[topic.id]) continue;
+        // Skip currently viewed topic
+        if (isViewingTopic && topic.id === currentChatView?.activeTopic) continue;
 
         const lastRead = readStatusMap[topic.id];
 

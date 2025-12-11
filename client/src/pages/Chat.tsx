@@ -174,7 +174,18 @@ export default function Chat() {
       activeGroup,
     };
     sessionStorage.setItem("colab-chat-state", JSON.stringify(state));
+    // Dispatch custom event so Layout.tsx can update badge counts immediately
+    window.dispatchEvent(new CustomEvent("chat-state-changed"));
   }, [activeTab, viewMode, activeTopic, activeDm, activeGroup]);
+
+  // Clear chat viewing state when leaving the Chat page
+  useEffect(() => {
+    return () => {
+      // Clear the viewing state so badge counts show correctly when on other pages
+      sessionStorage.removeItem("colab-chat-state");
+      window.dispatchEvent(new CustomEvent("chat-state-changed"));
+    };
+  }, []);
 
   // Fetch muted users for the current user
   const { data: mutedUserIds = [] } = useQuery({
@@ -2117,6 +2128,77 @@ export default function Chat() {
       supabase.removeChannel(channel);
     };
   }, [user, queryClient]);
+
+  // Real-time subscription for connection changes (removed connections should remove DMs)
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`chat-connections:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "connections",
+        },
+        (payload) => {
+          const deleted = payload.old as any;
+          // Check if this affects the current user
+          if (deleted.follower_id === user.id || deleted.following_id === user.id) {
+            // Determine who the other person was
+            const otherUserId = deleted.follower_id === user.id ? deleted.following_id : deleted.follower_id;
+
+            // Invalidate private chats to remove the DM tile
+            queryClient.invalidateQueries({ queryKey: ["private-chats", user.id] });
+            queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
+
+            // If currently viewing a DM with this person, kick them out
+            if (activeTab === "dms" && viewMode === "chat" && activeDm === otherUserId) {
+              toast({
+                title: "Connection removed",
+                description: "This conversation is no longer available.",
+              });
+              setActiveDm(null);
+              setViewMode("list");
+            }
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "connections",
+        },
+        (payload) => {
+          const updated = payload.new as any;
+          // If status changed from 'accepted' to something else (rejected/pending), treat as removal
+          if (updated.status !== "accepted" &&
+              (updated.follower_id === user.id || updated.following_id === user.id)) {
+            const otherUserId = updated.follower_id === user.id ? updated.following_id : updated.follower_id;
+
+            queryClient.invalidateQueries({ queryKey: ["private-chats", user.id] });
+            queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
+
+            if (activeTab === "dms" && viewMode === "chat" && activeDm === otherUserId) {
+              toast({
+                title: "Connection removed",
+                description: "This conversation is no longer available.",
+              });
+              setActiveDm(null);
+              setViewMode("list");
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient, activeTab, viewMode, activeDm, toast]);
 
   // Scroll handling
   const checkIfAtBottom = useCallback(() => {
