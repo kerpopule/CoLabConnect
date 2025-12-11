@@ -25,7 +25,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { SocialLinksEditor } from "@/components/SocialLinksEditor";
 import { ImageCropDialog } from "@/components/ImageCropDialog";
+import { TagPickerDialog } from "@/components/TagPickerDialog";
+import { Badge } from "@/components/ui/badge";
 import { SocialLink, migrateOldSocialLinks, normalizeUrl } from "@/lib/utils";
+import { X } from "lucide-react";
 
 export default function EditProfile() {
   const [, setLocation] = useLocation();
@@ -46,7 +49,7 @@ export default function EditProfile() {
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [bio, setBio] = useState("");
-  const [tags, setTags] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
@@ -61,7 +64,7 @@ export default function EditProfile() {
       setRole(profile.role || "");
       setCompany(profile.company || "");
       setBio(profile.bio || "");
-      setTags((profile.tags || []).join(", "));
+      setTags(profile.tags || []);
       setAvatarUrl(profile.avatar_url || null);
       setPhone(profile.phone || "");
       // Use profile email if set, otherwise fall back to auth email
@@ -334,12 +337,6 @@ export default function EditProfile() {
     // Check if this is a new user completing their profile (before update)
     const wasNewUser = !profile?.role && !profile?.bio && (!profile?.tags || profile.tags.length === 0);
 
-    // Parse tags from comma-separated string
-    const tagsArray = tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
-
     // Normalize URLs and filter out empty links
     const normalizedLinks = socialLinks
       .filter(link => link.url.trim() !== "")
@@ -353,7 +350,7 @@ export default function EditProfile() {
       role: role || null,
       company: company || null,
       bio: bio || null,
-      tags: tagsArray.length > 0 ? tagsArray : [],
+      tags: tags.length > 0 ? tags : [],
       social_links: normalizedLinks,
       email: displayEmail || user?.email || null,
       phone: phone || null,
@@ -665,12 +662,34 @@ export default function EditProfile() {
             </div>
 
             <div className="space-y-2">
-              <Label>Specialty Tags (Separate by comma)</Label>
-              <Input
-                placeholder="e.g. Fintech, React, Design, Fundraising"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                className="bg-muted/30"
+              <Label>Specialty Tags</Label>
+
+              {/* Display selected tags with remove buttons */}
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-2 pb-2">
+                  {tags.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant="secondary"
+                      className="bg-primary/10 text-primary border-primary/20 px-3 py-1 pr-2 flex items-center gap-1"
+                    >
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => setTags(tags.filter((t) => t !== tag))}
+                        className="ml-1 hover:bg-primary/20 rounded-full p-0.5"
+                        disabled={isLoading}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              <TagPickerDialog
+                selectedTags={tags}
+                onTagsChange={setTags}
                 disabled={isLoading}
               />
             </div>
