@@ -373,6 +373,115 @@ export default function Chat() {
     setContextMenu(null);
   };
 
+  // Toggle DM push notifications (bell icon in chat header)
+  // If enabling: also unmutes if muted
+  // If disabling: only disables push, keeps badges
+  const handleToggleDmNotifications = async (otherUserId: string, enable: boolean) => {
+    if (!user) return;
+    const currentSettings = dmSettings[otherUserId];
+    const updateData: { notifications_enabled: boolean; muted?: boolean } = {
+      notifications_enabled: enable,
+    };
+    // If enabling notifications and currently muted, unmute as well
+    if (enable && currentSettings?.muted) {
+      updateData.muted = false;
+    }
+    const { error } = await supabase
+      .from("dm_settings")
+      .upsert({
+        user_id: user.id,
+        other_user_id: otherUserId,
+        ...updateData,
+      }, { onConflict: "user_id,other_user_id" });
+    if (error) {
+      console.error("Error updating DM notification settings:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update settings",
+        description: "Please try again.",
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["dm-settings", user.id] });
+    queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
+    toast({
+      title: enable ? "Notifications enabled" : "Notifications disabled",
+      description: enable
+        ? (currentSettings?.muted ? "Chat unmuted. Badges and push notifications restored." : "Push notifications enabled.")
+        : "Push notifications disabled. Badges will still appear.",
+    });
+  };
+
+  // Toggle Topic push notifications (bell icon in chat header)
+  const handleToggleTopicNotifications = async (topicId: string, enable: boolean) => {
+    if (!user) return;
+    const currentSettings = topicSettings[topicId];
+    const updateData: { notifications_enabled: boolean; muted?: boolean } = {
+      notifications_enabled: enable,
+    };
+    if (enable && currentSettings?.muted) {
+      updateData.muted = false;
+    }
+    const { error } = await supabase
+      .from("topic_settings")
+      .upsert({
+        user_id: user.id,
+        topic_id: topicId,
+        ...updateData,
+      }, { onConflict: "user_id,topic_id" });
+    if (error) {
+      console.error("Error updating topic notification settings:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update settings",
+        description: "Please try again.",
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["topic-settings", user.id] });
+    queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
+    toast({
+      title: enable ? "Notifications enabled" : "Notifications disabled",
+      description: enable
+        ? (currentSettings?.muted ? "Topic unmuted. Badges and push notifications restored." : "Push notifications enabled.")
+        : "Push notifications disabled. Badges will still appear.",
+    });
+  };
+
+  // Toggle Group push notifications (bell icon in chat header)
+  const handleToggleGroupNotificationsNew = async (groupId: string, enable: boolean) => {
+    if (!user) return;
+    const group = groupChats?.find((g: any) => g.id === groupId);
+    const updateData: { notifications_enabled: boolean; muted?: boolean } = {
+      notifications_enabled: enable,
+    };
+    if (enable && group?.muted) {
+      updateData.muted = false;
+    }
+    const { error } = await supabase
+      .from("group_chat_members")
+      .update(updateData)
+      .eq("group_id", groupId)
+      .eq("user_id", user.id);
+    if (error) {
+      console.error("Error updating group notification settings:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update settings",
+        description: "Please try again.",
+      });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
+    queryClient.invalidateQueries({ queryKey: ["user-groups", user.id] });
+    toast({
+      title: enable ? "Notifications enabled" : "Notifications disabled",
+      description: enable
+        ? (group?.muted ? "Group unmuted. Badges and push notifications restored." : "Push notifications enabled.")
+        : "Push notifications disabled. Badges will still appear.",
+    });
+  };
+
   // Reply to a user - adds @mention to input
   const handleReplyToUser = (senderName: string) => {
     setInput(`@${senderName} `);
@@ -3551,28 +3660,33 @@ export default function Chat() {
           <div className="flex-1" />
 
           {/* Notification Bell (for non-AI chats in chat view) */}
+          {/* Bell ON = notifications_enabled true, Bell OFF = notifications_enabled false */}
+          {/* Bell only controls push notifications. Mute (from tile) controls both badges + push */}
           {viewMode === "chat" && activeTab !== "ai" && (
             <button
               onClick={() => {
-                if (isGroupChat) {
+                if (isGroupChat && activeGroup) {
                   if (!hasNotificationsEnabled) {
                     setShowTopicPrompt(true);
                   } else {
-                    handleToggleGroupNotifications();
+                    // Toggle notifications_enabled (and unmute if enabling while muted)
+                    handleToggleGroupNotificationsNew(activeGroup, !isGroupNotificationsEnabled);
                   }
                 } else if (isPrivateChat && activeDm) {
                   if (!hasNotificationsEnabled) {
                     setShowDmPrompt(true);
                   } else {
-                    const currentMuted = dmSettings[activeDm]?.muted || false;
-                    handleMuteDm(activeDm, !currentMuted);
+                    // Toggle notifications_enabled (and unmute if enabling while muted)
+                    const currentEnabled = dmSettings[activeDm]?.notifications_enabled !== false;
+                    handleToggleDmNotifications(activeDm, !currentEnabled);
                   }
                 } else if (activeTopic) {
                   if (!hasNotificationsEnabled) {
                     setShowTopicPrompt(true);
                   } else {
-                    const currentMuted = topicSettings[activeTopic]?.muted || false;
-                    handleMuteTopic(activeTopic, !currentMuted);
+                    // Toggle notifications_enabled (and unmute if enabling while muted)
+                    const currentEnabled = topicSettings[activeTopic]?.notifications_enabled !== false;
+                    handleToggleTopicNotifications(activeTopic, !currentEnabled);
                   }
                 }
               }}
@@ -3581,15 +3695,15 @@ export default function Chat() {
                 isGroupChat
                   ? (isGroupNotificationsEnabled ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
                   : isPrivateChat
-                  ? (activeDm && !dmSettings[activeDm]?.muted ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
-                  : (activeTopic && !topicSettings[activeTopic]?.muted ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
+                  ? ((dmSettings[activeDm || ""]?.notifications_enabled !== false) ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
+                  : ((topicSettings[activeTopic || ""]?.notifications_enabled !== false) ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
               }`}
               title={
                 isGroupChat
-                  ? (isGroupNotificationsEnabled ? "Mute group" : "Unmute group")
+                  ? (isGroupNotificationsEnabled ? "Disable push notifications" : "Enable push notifications")
                   : isPrivateChat
-                  ? (activeDm && !dmSettings[activeDm]?.muted ? "Mute conversation" : "Unmute conversation")
-                  : (activeTopic && !topicSettings[activeTopic]?.muted ? "Mute topic" : "Unmute topic")
+                  ? ((dmSettings[activeDm || ""]?.notifications_enabled !== false) ? "Disable push notifications" : "Enable push notifications")
+                  : ((topicSettings[activeTopic || ""]?.notifications_enabled !== false) ? "Disable push notifications" : "Enable push notifications")
               }
             >
               {followLoading ? (
@@ -3597,9 +3711,9 @@ export default function Chat() {
               ) : isGroupChat ? (
                 isGroupNotificationsEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
               ) : isPrivateChat ? (
-                (activeDm && !dmSettings[activeDm]?.muted) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
+                (dmSettings[activeDm || ""]?.notifications_enabled !== false) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
               ) : (
-                (activeTopic && !topicSettings[activeTopic]?.muted) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
+                (topicSettings[activeTopic || ""]?.notifications_enabled !== false) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
               )}
             </button>
           )}
