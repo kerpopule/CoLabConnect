@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SocialLinksDisplay } from "@/components/SocialLinksEditor";
 import { migrateOldSocialLinks } from "@/lib/utils";
 import { downloadVCard } from "@/lib/vcard";
+import { OnlineIndicator } from "@/components/OnlineIndicator";
 
 const QR_ACCESS_KEY = "colab-qr-access";
 
@@ -322,12 +323,15 @@ export default function UserProfile() {
         <CardContent className="relative pt-0 pb-6">
           {/* Avatar - overlapping the cover */}
           <div className="flex flex-col items-center -mt-16 mb-4">
-            <Avatar className="w-32 h-32 border-4 border-background shadow-xl">
-              <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
-              <AvatarFallback className="bg-primary/10 text-primary font-bold text-3xl">
-                {getInitials(profile.name)}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative">
+              <Avatar className="w-32 h-32 border-4 border-background shadow-xl">
+                <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
+                <AvatarFallback className="bg-primary/10 text-primary font-bold text-3xl">
+                  {getInitials(profile.name)}
+                </AvatarFallback>
+              </Avatar>
+              <OnlineIndicator userId={profile.id} className="absolute bottom-2 right-2" size="lg" />
+            </div>
 
             <h1 className="text-2xl font-display font-bold mt-4">{profile.name}</h1>
 

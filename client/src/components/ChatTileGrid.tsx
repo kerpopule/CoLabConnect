@@ -1,6 +1,7 @@
 import { Plus, GripVertical, BellOff } from "lucide-react";
 import { useRef, useCallback, useState, useEffect } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { OnlineIndicator } from "@/components/OnlineIndicator";
 
 // Helper to get initials from name
 function getInitials(name: string): string {
@@ -17,6 +18,7 @@ interface TileItem {
   emoji?: string | string[];
   avatarUrl?: string; // For DM tiles - shows avatar instead of emoji
   avatarFallback?: string; // Fallback text for avatar (e.g., initials)
+  userId?: string; // For online indicator on DM tiles
   name: string;
   subtitle?: string; // Small text under the name (e.g., member names or role)
   unreadCount?: number;
@@ -447,12 +449,15 @@ function TileButton({
       >
         {/* Avatar Display (for DMs) or Emoji Display */}
         {item.avatarUrl !== undefined ? (
-          <Avatar className={item.isWide ? "h-12 w-12 sm:h-14 sm:w-14" : "h-10 w-10 sm:h-12 sm:w-12"}>
-            <AvatarImage src={item.avatarUrl || undefined} alt={item.name} />
-            <AvatarFallback className="text-sm sm:text-base font-medium">
-              {item.avatarFallback || getInitials(item.name)}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative">
+            <Avatar className={item.isWide ? "h-12 w-12 sm:h-14 sm:w-14" : "h-10 w-10 sm:h-12 sm:w-12"}>
+              <AvatarImage src={item.avatarUrl || undefined} alt={item.name} />
+              <AvatarFallback className="text-sm sm:text-base font-medium">
+                {item.avatarFallback || getInitials(item.name)}
+              </AvatarFallback>
+            </Avatar>
+            {item.userId && <OnlineIndicator userId={item.userId} className="absolute bottom-0 right-0" size="sm" />}
+          </div>
         ) : (
           <div className={item.isWide ? "text-4xl sm:text-4xl" : "text-3xl sm:text-4xl"}>
             {Array.isArray(item.emoji)

@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
 import { SocialLinksDisplay } from "@/components/SocialLinksEditor";
 import { migrateOldSocialLinks } from "@/lib/utils";
+import { OnlineIndicator } from "@/components/OnlineIndicator";
 
 // Fallback mock data for when database is empty
 const MOCK_USERS: Partial<Profile>[] = [
@@ -322,7 +323,7 @@ export default function Directory() {
                         {getInitials(profile.name || "?")}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
+                    <OnlineIndicator userId={profile.id!} className="absolute bottom-0 right-0" />
                   </div>
                   <div>
                     <h3 className="font-bold text-lg leading-tight hover:text-primary transition-colors">

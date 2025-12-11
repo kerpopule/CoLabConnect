@@ -37,6 +37,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Profile, Connection } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { OnlineIndicator } from "@/components/OnlineIndicator";
 
 type ConnectionWithProfile = Connection & {
   follower_profile?: Profile;
@@ -485,12 +486,15 @@ export default function Connections() {
                             <div className="flex items-center justify-between">
                               <Link href={`/profile/${profile.id}`}>
                                 <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
-                                  <Avatar className="h-12 w-12">
-                                    <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
-                                    <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                                      {getInitials(profile.name)}
-                                    </AvatarFallback>
-                                  </Avatar>
+                                  <div className="relative">
+                                    <Avatar className="h-12 w-12">
+                                      <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
+                                      <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                                        {getInitials(profile.name)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <OnlineIndicator userId={profile.id} className="absolute bottom-0 right-0" size="sm" />
+                                  </div>
                                   <div>
                                     <h3 className="font-semibold">{profile.name}</h3>
                                     <p className="text-sm text-muted-foreground">
@@ -567,12 +571,15 @@ export default function Connections() {
                       <div className="flex items-center justify-between">
                         <Link href={`/profile/${profile.id}`}>
                           <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
-                            <Avatar className="h-12 w-12">
-                              <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
-                              <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                                {getInitials(profile.name)}
-                              </AvatarFallback>
-                            </Avatar>
+                            <div className="relative">
+                              <Avatar className="h-12 w-12">
+                                <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
+                                <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                                  {getInitials(profile.name)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <OnlineIndicator userId={profile.id} className="absolute bottom-0 right-0" size="sm" />
+                            </div>
                             <div>
                               <h3 className="font-semibold">{profile.name}</h3>
                               <p className="text-sm text-muted-foreground">
@@ -642,12 +649,15 @@ export default function Connections() {
                       <div className="flex items-center justify-between">
                         <Link href={`/profile/${profile.id}`}>
                           <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
-                            <Avatar className="h-12 w-12">
-                              <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
-                              <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                                {getInitials(profile.name)}
-                              </AvatarFallback>
-                            </Avatar>
+                            <div className="relative">
+                              <Avatar className="h-12 w-12">
+                                <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
+                                <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                                  {getInitials(profile.name)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <OnlineIndicator userId={profile.id} className="absolute bottom-0 right-0" size="sm" />
+                            </div>
                             <div>
                               <h3 className="font-semibold">{profile.name}</h3>
                               <p className="text-sm text-muted-foreground">

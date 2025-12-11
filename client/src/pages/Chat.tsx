@@ -20,6 +20,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import ChatTileGrid from "@/components/ChatTileGrid";
 import GroupCreateModal from "@/components/GroupCreateModal";
 import { GifPicker } from "@/components/GifPicker";
+import { OnlineIndicator } from "@/components/OnlineIndicator";
 
 type AIMessage = {
   id: string;
@@ -3947,6 +3948,7 @@ export default function Chat() {
                     <ChatTileGrid
                       items={(dmsWithHistory?.active || []).map((chat) => ({
                         id: chat.profile.id,
+                        userId: chat.profile.id,
                         avatarUrl: chat.profile.avatar_url || "",
                         avatarFallback: chat.profile.name
                           .split(" ")
@@ -3974,6 +3976,7 @@ export default function Chat() {
                     <ChatTileGrid
                       items={(dmsWithHistory?.connections || []).map((conn) => ({
                         id: conn.profile.id,
+                        userId: conn.profile.id,
                         avatarUrl: conn.profile.avatar_url || "",
                         avatarFallback: conn.profile.name
                           .split(" ")
@@ -4199,21 +4202,24 @@ export default function Chat() {
                         onTopicAdminKick={isGeneralTopic && isGeneralTopicAdmin ? (userId: string, userName: string) => setShowKickConfirm({ userId, userName }) : undefined}
                       >
                         <div className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}>
-                          <Avatar className="w-8 h-8 shrink-0">
-                            <AvatarImage
-                              src={senderProfile?.avatar_url || undefined}
-                              alt={senderName}
-                            />
-                            <AvatarFallback
-                              className={`text-xs font-bold ${
-                                isOwn
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-secondary text-secondary-foreground"
-                              }`}
-                            >
-                              {getInitials(senderName)}
-                            </AvatarFallback>
-                          </Avatar>
+                          <div className="relative shrink-0">
+                            <Avatar className="w-8 h-8">
+                              <AvatarImage
+                                src={senderProfile?.avatar_url || undefined}
+                                alt={senderName}
+                              />
+                              <AvatarFallback
+                                className={`text-xs font-bold ${
+                                  isOwn
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary text-secondary-foreground"
+                                }`}
+                              >
+                                {getInitials(senderName)}
+                              </AvatarFallback>
+                            </Avatar>
+                            {!isOwn && senderId && <OnlineIndicator userId={senderId} className="absolute -bottom-0.5 -right-0.5" size="sm" />}
+                          </div>
                           <div className="max-w-[75%] space-y-1">
                             <div
                               className={`flex items-baseline gap-2 ${
