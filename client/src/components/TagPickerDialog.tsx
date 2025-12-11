@@ -144,6 +144,7 @@ export function TagPickerDialog({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
+              autoFocus={false}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
