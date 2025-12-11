@@ -125,11 +125,12 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of clientList) {
         if ('focus' in client) {
           client.focus();
+          // Post message to navigate (app will handle via useEffect)
           client.postMessage({ type: 'NAVIGATE', url });
           return;
         }
       }
-      // Otherwise, open a new window
+      // Otherwise, open a new window directly to the URL
       if (clients.openWindow) {
         return clients.openWindow(url);
       }

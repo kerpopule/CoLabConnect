@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { log } from "./index";
 import { notifyNewDM, notifyConnectionRequest, notifyFollowedChat, notifyGroupInvite, notifyGroupMessage, notifyTopicKick, notifyTopicInviteBack, notifyGroupRename, notifyGroupMemberJoined, notifyGroupInviteDeclined, notifyGroupAdminTransfer } from "./pushNotifications";
+import { setViewing, isUserViewingDm, isUserViewing } from "./activeViewers";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
@@ -341,6 +342,31 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       log(`Push unsubscribe error: ${error.message}`);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================
+  // Active Viewer Tracking (for notification suppression)
+  // ============================================
+
+  // Register/update user's chat viewing status
+  app.post("/api/chat/viewing", (req, res) => {
+    try {
+      const { userId, chatType, chatId, viewing } = req.body;
+
+      if (!userId || !chatType || !chatId || viewing === undefined) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      if (!['dm', 'group', 'topic'].includes(chatType)) {
+        return res.status(400).json({ error: "Invalid chatType" });
+      }
+
+      setViewing(chatType as 'dm' | 'group' | 'topic', chatId, userId, viewing);
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Viewing status error: ${error.message}`);
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -944,6 +970,11 @@ export async function registerRoutes(
 
       if (!receiverId || !senderId || !senderName) {
         return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Skip notification if receiver is actively viewing the DM with sender
+      if (isUserViewingDm(receiverId, senderId)) {
+        return res.json({ success: true, skipped: true, reason: "User is viewing chat" });
       }
 
       await notifyNewDM(receiverId, senderId, senderName, messagePreview || "New message");

@@ -1151,6 +1151,17 @@ export default function Chat() {
   const markMessagesAsRead = useCallback(async (senderId: string) => {
     if (!user) return;
 
+    // Optimistically clear badge count immediately before DB update
+    queryClient.setQueryData(["dms-with-history", user.id], (old: any) => {
+      if (!old) return old;
+      return {
+        ...old,
+        active: old.active?.map((dm: any) =>
+          dm.profile?.id === senderId ? { ...dm, unreadCount: 0 } : dm
+        ),
+      };
+    });
+
     const { error } = await supabase
       .from("private_messages")
       .update({ read_at: new Date().toISOString() })
@@ -1160,18 +1171,26 @@ export default function Chat() {
 
     if (error) {
       console.error("Error marking messages as read:", error);
+      // Revert on error by refetching
+      queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
     } else {
-      // Invalidate all DM-related queries to update badges immediately
+      // Invalidate all DM-related queries to sync with server
       queryClient.invalidateQueries({ queryKey: ["unread-messages-count"] });
       queryClient.invalidateQueries({ queryKey: ["dms-with-history", user.id] });
-      queryClient.refetchQueries({ queryKey: ["unread-messages-count"] });
-      queryClient.refetchQueries({ queryKey: ["dms-with-history", user.id] });
     }
   }, [user, queryClient]);
 
   // Update group last_read_at when viewing group chat
   const markGroupAsRead = useCallback(async (groupId: string) => {
     if (!user) return;
+
+    // Optimistically clear badge count immediately before DB update
+    queryClient.setQueryData(["group-chats", user.id], (old: any) => {
+      if (!old) return old;
+      return old.map((group: any) =>
+        group.id === groupId ? { ...group, unread_count: 0 } : group
+      );
+    });
 
     const { error } = await supabase
       .from("group_chat_members")
@@ -1181,10 +1200,11 @@ export default function Chat() {
 
     if (error) {
       console.error("Error marking group as read:", error);
-    } else {
-      // Invalidate and refetch to update badges immediately
+      // Revert on error by refetching
       queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
-      queryClient.refetchQueries({ queryKey: ["group-chats", user.id] });
+    } else {
+      // Invalidate to sync with server
+      queryClient.invalidateQueries({ queryKey: ["group-chats", user.id] });
     }
   }, [user, queryClient]);
 
@@ -1225,6 +1245,16 @@ export default function Chat() {
 
     const now = new Date().toISOString();
 
+    // Optimistically clear badge count immediately before DB update
+    queryClient.setQueryData(["topic-unread-counts", user.id], (old: any) => {
+      if (!old) return old;
+      return { ...old, [topicId]: 0 };
+    });
+    queryClient.setQueryData(["topic-read-status", user.id], (old: any) => {
+      if (!old) return old;
+      return { ...old, [topicId]: now };
+    });
+
     // Upsert the read status
     const { error } = await supabase
       .from("topic_read_status")
@@ -1238,14 +1268,15 @@ export default function Chat() {
 
     if (error) {
       console.error("Error marking topic as read:", error);
+      // Revert on error by refetching
+      queryClient.invalidateQueries({ queryKey: ["topic-read-status", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
       return;
     }
 
-    // Invalidate and refetch to update badges immediately
+    // Invalidate to sync with server
     queryClient.invalidateQueries({ queryKey: ["topic-read-status", user.id] });
     queryClient.invalidateQueries({ queryKey: ["topic-unread-counts", user.id] });
-    queryClient.refetchQueries({ queryKey: ["topic-read-status", user.id] });
-    queryClient.refetchQueries({ queryKey: ["topic-unread-counts", user.id] });
   }, [user, queryClient]);
 
   // Handle URL parameter changes for navigation from push notifications
@@ -1265,6 +1296,63 @@ export default function Chat() {
       setViewMode("list");
     }
   }, [dmUserId, groupIdFromUrl, tabFromUrl, markMessagesAsRead, markGroupAsRead]);
+
+  // Handle push notification navigation (when app is already open)
+  useEffect(() => {
+    // Check for pending navigation from sessionStorage (set by service worker)
+    const pendingNav = sessionStorage.getItem('pendingNavigation');
+    if (pendingNav) {
+      sessionStorage.removeItem('pendingNavigation');
+      // Parse the URL to extract params
+      const url = new URL(pendingNav, window.location.origin);
+      const dm = url.searchParams.get('dm');
+      const group = url.searchParams.get('group');
+      const tab = url.searchParams.get('tab') as ActiveTab | null;
+
+      if (dm) {
+        setActiveTab("dms");
+        setActiveDm(dm);
+        setViewMode("chat");
+        markMessagesAsRead(dm);
+      } else if (group) {
+        setActiveTab("groups");
+        setActiveGroup(group);
+        setViewMode("chat");
+        markGroupAsRead(group);
+      } else if (tab) {
+        setActiveTab(tab);
+        setViewMode("list");
+      }
+    }
+
+    // Listen for push notification navigation events
+    const handlePushNav = (event: CustomEvent<{ url: string }>) => {
+      const url = new URL(event.detail.url, window.location.origin);
+      const dm = url.searchParams.get('dm');
+      const group = url.searchParams.get('group');
+      const tab = url.searchParams.get('tab') as ActiveTab | null;
+
+      if (dm) {
+        setActiveTab("dms");
+        setActiveDm(dm);
+        setViewMode("chat");
+        markMessagesAsRead(dm);
+      } else if (group) {
+        setActiveTab("groups");
+        setActiveGroup(group);
+        setViewMode("chat");
+        markGroupAsRead(group);
+      } else if (tab) {
+        setActiveTab(tab);
+        setViewMode("list");
+      }
+    };
+
+    window.addEventListener('pushnotification-navigate', handlePushNav as EventListener);
+    return () => {
+      window.removeEventListener('pushnotification-navigate', handlePushNav as EventListener);
+    };
+  }, [markMessagesAsRead, markGroupAsRead]);
 
   // Fetch topics - sorted by display_order (admin-controlled)
   const { data: topics, isLoading: topicsLoading } = useQuery({
@@ -1627,7 +1715,11 @@ export default function Chat() {
             ["messages", activeTopic],
             (old) => {
               if (old?.some(m => m.id === newMessage.id)) return old;
-              return [...(old || []), newMessage];
+              const updated = [...(old || []), newMessage];
+              // Sort by created_at to ensure correct message order
+              return updated.sort((a, b) =>
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              );
             }
           );
         }
@@ -1676,7 +1768,11 @@ export default function Chat() {
               ["private-messages", user.id, activeDm],
               (old) => {
                 if (old?.some(m => m.id === messageWithProfile.id)) return old;
-                return [...(old || []), messageWithProfile];
+                const updated = [...(old || []), messageWithProfile];
+                // Sort by created_at to ensure correct message order
+                return updated.sort((a, b) =>
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
               }
             );
 
@@ -1725,7 +1821,11 @@ export default function Chat() {
             ["group-messages", activeGroup],
             (old: any) => {
               if (old?.some((m: any) => m.id === newMessage.id)) return old;
-              return [...(old || []), newMessage];
+              const updated = [...(old || []), newMessage];
+              // Sort by created_at to ensure correct message order
+              return updated.sort((a: any, b: any) =>
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              );
             }
           );
         }
@@ -1777,6 +1877,62 @@ export default function Chat() {
       supabase.removeChannel(channel);
     };
   }, [user, queryClient]);
+
+  // Track viewing status for push notification suppression
+  useEffect(() => {
+    if (!user) return;
+
+    // Helper to report viewing status to server
+    const reportViewing = async (chatType: 'dm' | 'group' | 'topic', chatId: string, viewing: boolean) => {
+      try {
+        await fetch('/api/chat/viewing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, chatType, chatId, viewing }),
+        });
+      } catch (error) {
+        console.error('Failed to report viewing status:', error);
+      }
+    };
+
+    // Report current viewing status
+    if (viewMode === 'chat') {
+      if (activeTab === 'dms' && activeDm) {
+        reportViewing('dm', activeDm, true);
+      } else if (activeTab === 'groups' && activeGroup) {
+        reportViewing('group', activeGroup, true);
+      } else if (activeTab === 'general' && activeTopic) {
+        reportViewing('topic', activeTopic, true);
+      }
+    }
+
+    // Set up heartbeat interval (every 15 seconds)
+    const heartbeatInterval = setInterval(() => {
+      if (viewMode === 'chat') {
+        if (activeTab === 'dms' && activeDm) {
+          reportViewing('dm', activeDm, true);
+        } else if (activeTab === 'groups' && activeGroup) {
+          reportViewing('group', activeGroup, true);
+        } else if (activeTab === 'general' && activeTopic) {
+          reportViewing('topic', activeTopic, true);
+        }
+      }
+    }, 15000);
+
+    // Cleanup: report not viewing when leaving
+    return () => {
+      clearInterval(heartbeatInterval);
+      if (viewMode === 'chat') {
+        if (activeTab === 'dms' && activeDm) {
+          reportViewing('dm', activeDm, false);
+        } else if (activeTab === 'groups' && activeGroup) {
+          reportViewing('group', activeGroup, false);
+        } else if (activeTab === 'general' && activeTopic) {
+          reportViewing('topic', activeTopic, false);
+        }
+      }
+    };
+  }, [user, viewMode, activeTab, activeDm, activeGroup, activeTopic]);
 
   // Real-time subscription for new group messages (global - for unread counts)
   useEffect(() => {

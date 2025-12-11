@@ -61,7 +61,21 @@ export function usePushNotifications() {
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === "NAVIGATE" && event.data?.url) {
-        window.location.href = event.data.url;
+        const url = event.data.url;
+        // Use History API for smoother navigation within the SPA
+        // This avoids full page reload and works better with React state
+        if (url.startsWith('/')) {
+          // Store in sessionStorage as backup for page reload scenarios
+          sessionStorage.setItem('pendingNavigation', url);
+          // Use history.pushState + dispatch popstate to trigger React Router navigation
+          window.history.pushState({}, '', url);
+          // Dispatch a custom event that components can listen to
+          window.dispatchEvent(new CustomEvent('pushnotification-navigate', { detail: { url } }));
+          // Also dispatch popstate to trigger useSearch/useLocation updates
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else {
+          window.location.href = url;
+        }
       } else if (event.data?.type === "SW_UPDATED") {
         console.log("[PWA] Service worker updated to version:", event.data.version);
         // Reload the page to get the new version

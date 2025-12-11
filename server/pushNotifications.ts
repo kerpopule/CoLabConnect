@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
+import { isUserViewing } from "./activeViewers";
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -227,9 +228,11 @@ export async function notifyFollowedChat(
       .map((s: { user_id: string }) => s.user_id)
   );
 
-  // Filter out muted users
+  // Filter out muted users AND users currently viewing this topic
   const notifiableFollowers = followers.filter(
-    (f: { user_id: string }) => !mutedUserIds.has(f.user_id)
+    (f: { user_id: string }) =>
+      !mutedUserIds.has(f.user_id) &&
+      !isUserViewing('topic', topicId, f.user_id)
   );
 
   if (notifiableFollowers.length === 0) {
@@ -382,9 +385,12 @@ export async function notifyGroupMessage(
   }
 
   // Filter to only members who are NOT muted AND have notifications enabled (default to true if not set)
+  // AND are not currently viewing the group chat
   const notifiableMembers = members.filter(
     (member: { user_id: string; notifications_enabled: boolean | null; muted: boolean | null }) =>
-      !member.muted && member.notifications_enabled !== false
+      !member.muted &&
+      member.notifications_enabled !== false &&
+      !isUserViewing('group', groupId, member.user_id)
   );
 
   if (notifiableMembers.length === 0) {
