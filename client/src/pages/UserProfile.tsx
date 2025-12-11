@@ -349,12 +349,10 @@ export default function UserProfile() {
               </div>
             )}
 
-            {/* Contact info in header - show based on visibility settings */}
-            {/* For own profile: always show. For others: show if visibility is enabled */}
-            {((profile.show_email !== false && profile.email) || (profile.show_phone && profile.phone) || isOwnProfile) && (
+            {/* Contact info in header - only show if visibility is enabled */}
+            {((profile.show_email !== false && profile.email) || (profile.show_phone && profile.phone)) && (
               <div className="flex flex-wrap items-center justify-center gap-4 mt-3">
-                {/* Email: show if visible OR if viewing own profile */}
-                {((profile.show_email !== false && profile.email) || (isOwnProfile && profile.email)) && (
+                {profile.show_email !== false && profile.email && (
                   <a
                     href={`mailto:${profile.email}`}
                     className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
@@ -363,8 +361,7 @@ export default function UserProfile() {
                     <span className="truncate max-w-[200px] sm:max-w-none">{profile.email}</span>
                   </a>
                 )}
-                {/* Phone: show if visible OR if viewing own profile */}
-                {((profile.show_phone && profile.phone) || (isOwnProfile && profile.phone)) && (
+                {profile.show_phone && profile.phone && (
                   <a
                     href={`tel:${profile.phone}`}
                     className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"

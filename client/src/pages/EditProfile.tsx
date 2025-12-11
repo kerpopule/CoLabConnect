@@ -565,9 +565,9 @@ export default function EditProfile() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="displayEmail">Display Email</Label>
+              <Label htmlFor="displayEmail">Display Email (Optional)</Label>
               <p className="text-xs text-muted-foreground">
-                This email will be shown on your profile. You can use a different email than the one you signed up with.
+                This email will be shown on your profile if visibility is enabled below. You can use a different email than the one you signed up with.
               </p>
               <div className="relative">
                 <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />

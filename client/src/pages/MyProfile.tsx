@@ -161,27 +161,29 @@ export default function MyProfile() {
               </div>
             )}
 
-            {/* Contact info in header */}
-            <div className="flex flex-wrap items-center justify-center gap-4 mt-3">
-              {profile.email && (
-                <a
-                  href={`mailto:${profile.email}`}
-                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  <Mail className="h-4 w-4" />
-                  <span className="truncate max-w-[200px] sm:max-w-none">{profile.email}</span>
-                </a>
-              )}
-              {profile.phone && (
-                <a
-                  href={`tel:${profile.phone}`}
-                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  <Phone className="h-4 w-4" />
-                  <span>{profile.phone}</span>
-                </a>
-              )}
-            </div>
+            {/* Contact info in header - only show if visibility is enabled */}
+            {((profile.show_email !== false && profile.email) || (profile.show_phone && profile.phone)) && (
+              <div className="flex flex-wrap items-center justify-center gap-4 mt-3">
+                {profile.show_email !== false && profile.email && (
+                  <a
+                    href={`mailto:${profile.email}`}
+                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span className="truncate max-w-[200px] sm:max-w-none">{profile.email}</span>
+                  </a>
+                )}
+                {profile.show_phone && profile.phone && (
+                  <a
+                    href={`tel:${profile.phone}`}
+                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <Phone className="h-4 w-4" />
+                    <span>{profile.phone}</span>
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Action buttons */}
