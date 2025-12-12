@@ -88,9 +88,9 @@ EOF
 # Update active color tracker
 echo "$NEW_LIVE" > "$CADDY_CONFIG/active_color"
 
-# Reload Caddy (zero-downtime reload)
-echo "Reloading Caddy (zero-downtime)..."
-docker exec n8n-docker-caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+# Restart Caddy (reload doesn't always pick up DNS changes)
+echo "Restarting Caddy..."
+docker restart n8n-docker-caddy-caddy-1
 
 echo ""
 echo "=========================================="

@@ -63,9 +63,10 @@ echo ""
 echo "Waiting for container to start..."
 sleep 5
 
-# Health check
+# Health check (install curl first as wget doesn't work reliably in alpine)
 echo "Running health check..."
-HEALTH_CHECK=$(docker exec colab-$STAGING wget -q -O /dev/null http://localhost:3000 && echo "ok" || echo "fail")
+docker exec colab-$STAGING sh -c 'apk add --no-cache curl >/dev/null 2>&1' 2>/dev/null || true
+HEALTH_CHECK=$(docker exec colab-$STAGING curl -sf http://localhost:3000 >/dev/null && echo "ok" || echo "fail")
 
 if [ "$HEALTH_CHECK" = "ok" ]; then
     echo ""
