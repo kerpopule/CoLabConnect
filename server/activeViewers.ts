@@ -12,8 +12,8 @@ interface ViewerEntry {
 // Map of chatKey -> Set of viewer entries
 const activeViewers = new Map<ChatKey, Map<UserId, ViewerEntry>>();
 
-// Heartbeat timeout in milliseconds (30 seconds)
-const HEARTBEAT_TIMEOUT = 30000;
+// Heartbeat timeout in milliseconds (45 seconds - allows 4 missed heartbeats at 10s interval)
+const HEARTBEAT_TIMEOUT = 45000;
 
 // Clean up stale entries periodically
 setInterval(() => {

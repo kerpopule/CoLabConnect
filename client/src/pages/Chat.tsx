@@ -1754,16 +1754,15 @@ export default function Chat() {
           event: "INSERT",
           schema: "public",
           table: "private_messages",
+          filter: `receiver_id=eq.${user.id}`,
         },
         async (payload) => {
           const newMsg = payload.new as PrivateMessage;
 
-          if (newMsg.sender_id === user.id) return;
+          // Only process messages from the active DM conversation
+          if (newMsg.sender_id !== activeDm) return;
 
-          if (
-            (newMsg.sender_id === user.id && newMsg.receiver_id === activeDm) ||
-            (newMsg.sender_id === activeDm && newMsg.receiver_id === user.id)
-          ) {
+          if (newMsg.sender_id === activeDm && newMsg.receiver_id === user.id) {
             const { data: senderProfile } = await supabase
               .from("profiles")
               .select("*")
@@ -1917,7 +1916,7 @@ export default function Chat() {
       }
     }
 
-    // Set up heartbeat interval (every 15 seconds)
+    // Set up heartbeat interval (every 10 seconds for reliable notification suppression)
     const heartbeatInterval = setInterval(() => {
       if (viewMode === 'chat') {
         if (activeTab === 'dms' && activeDm) {
@@ -1928,7 +1927,7 @@ export default function Chat() {
           reportViewing('topic', activeTopic, true);
         }
       }
-    }, 15000);
+    }, 10000);
 
     // Cleanup: report not viewing when leaving
     return () => {
@@ -2424,6 +2423,8 @@ export default function Chat() {
               : m
           ) || []
         );
+        // Invalidate dms-with-history to move tile from "Connections" to "Active Chats"
+        queryClient.invalidateQueries({ queryKey: ["dms-with-history"] });
       }
     },
   });
