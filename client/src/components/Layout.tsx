@@ -219,10 +219,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
     queryFn: async () => {
       if (!user) return 0;
 
-      // Get all topics
+      // Get all topics with slugs for default mute detection
       const { data: topics, error: topicsError } = await supabase
         .from("topics")
-        .select("id");
+        .select("id, slug");
 
       if (topicsError || !topics) return 0;
 
@@ -243,16 +243,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
         .select("topic_id, muted")
         .eq("user_id", user.id);
 
-      const topicMuteMap: Record<string, boolean> = {};
+      const topicMuteMap: Record<string, boolean | null> = {};
       for (const ts of topicMuteData || []) {
         topicMuteMap[ts.topic_id] = ts.muted;
       }
 
+      // Helper to check if topic is muted (explicit setting or default for bugs-requests)
+      const isTopicMuted = (topicId: string, slug: string | null): boolean => {
+        // If user has explicit setting, use that
+        if (topicMuteMap[topicId] !== undefined && topicMuteMap[topicId] !== null) {
+          return topicMuteMap[topicId] as boolean;
+        }
+        // Otherwise, "bugs-requests" is muted by default
+        return slug === 'bugs-requests';
+      };
+
       let totalUnread = 0;
 
       for (const topic of topics) {
-        // Skip muted topics
-        if (topicMuteMap[topic.id]) continue;
+        // Skip muted topics (explicit or default)
+        if (isTopicMuted(topic.id, topic.slug)) continue;
         // Skip currently viewed topic
         if (isViewingTopic && topic.id === currentChatView?.activeTopic) continue;
 

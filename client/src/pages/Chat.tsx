@@ -3783,8 +3783,10 @@ export default function Chat() {
   const totalDmUnread = (dmsWithHistory?.active || [])
     .reduce((sum: number, dm: any) => sum + (dm.unreadCount || 0), 0);
 
-  const totalGeneralUnread = Object.values(topicUnreadCounts || {})
-    .reduce((sum: number, count) => sum + (count as number), 0);
+  // Calculate total general unread, excluding muted topics
+  const totalGeneralUnread = displayTopics
+    .filter(t => !isTopicMuted(t.id))
+    .reduce((sum, t) => sum + ((topicUnreadCounts?.[t.id] as number) || 0), 0);
 
   // Check if current user is admin of the active group
   const isCurrentUserGroupAdmin = isGroupChat && activeGroupData?.membership_role === "admin";
