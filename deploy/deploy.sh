@@ -31,8 +31,9 @@ cd "$PROJECT_DIR"
 echo "Pulling latest code..."
 git pull
 
-# Load environment variables
-source .env
+# Load staging environment variables (isolated Supabase database)
+echo "Loading staging environment..."
+source .env.staging
 
 # Build new image
 echo ""

@@ -283,18 +283,26 @@ className="rounded-full focus:ring-2 focus:ring-primary/20"
 - **Border Radius**: Generally `rounded-xl` or `rounded-2xl`
 - **Shadows**: `shadow-sm` for cards, `shadow-lg` on hover
 
-## Production Deployment
+## Production Deployment (Blue-Green)
 
 ### Architecture
 
-The production server runs on DigitalOcean with:
-- **Caddy** (reverse proxy in Docker) handles HTTPS/SSL for `colabconnect.app`
-- **colab-connect** Docker container serves the app on port 3000
-- Caddy routes traffic to the container via Docker network `n8n-docker-caddy_default`
+The production server runs on DigitalOcean with **blue-green deployment** for zero-downtime releases:
+
+- **Caddy** (reverse proxy in Docker) handles HTTPS/SSL
+- **Two containers**: `colab-blue` and `colab-green` (one is production, one is staging)
+- **Zero-downtime switching**: Caddy reload swaps which container serves production
+- **Same Supabase backend**: Both containers connect to the same database/auth
 
 ```
-Internet → Caddy (ports 80/443) → Docker network → colab-connect:3000
+Internet → Caddy (ports 80/443) → Docker network
+                                    ├── colab-blue:3000  (production OR staging)
+                                    └── colab-green:3000 (staging OR production)
 ```
+
+**URLs**:
+- Production: `https://colabconnect.app`
+- Staging: `https://staging.colabconnect.app`
 
 ### Server Access
 
@@ -302,11 +310,12 @@ Internet → Caddy (ports 80/443) → Docker network → colab-connect:3000
 ssh colab-droplet   # Uses ~/.ssh/id_ed25519_digitalocean
 # Server IP: 104.131.176.167
 # Project path: /root/CoLabConnect
+# Deploy scripts: /root/CoLabConnect/deploy/
 ```
 
-### Deployment Steps (REQUIRED)
+### Deployment Workflow (Zero-Downtime)
 
-**IMPORTANT**: Code changes require rebuilding the Docker container. Just pushing to git or running `npm run build` is NOT enough.
+**Standard deployment process**:
 
 ```bash
 # 1. Commit and push changes locally
@@ -315,87 +324,87 @@ git add . && git commit -m "Your message" && git push
 # 2. SSH into server
 ssh colab-droplet
 
-# 3. Pull latest code
-cd /root/CoLabConnect && git pull
+# 3. Deploy to staging (does NOT affect production)
+cd /root/CoLabConnect/deploy
+./deploy.sh
 
-# 4. Stop and remove old container
-docker stop colab-connect && docker rm colab-connect
+# 4. Test at https://staging.colabconnect.app
+#    - Verify features work
+#    - Check for errors in logs: docker logs colab-green --tail 50
 
-# 5. Rebuild Docker image (includes npm install + build)
-source .env && docker build \
-  --build-arg VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
-  --build-arg VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY \
-  --build-arg VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY \
-  -t colab-connect .
-
-# 6. Start new container ON THE CADDY NETWORK
-docker run -d \
-  --name colab-connect \
-  -p 5000:3000 \
-  --network n8n-docker-caddy_default \
-  --env-file .env \
-  colab-connect
-
-# 7. Verify it's running
-docker logs colab-connect --tail 10
-curl -sI https://colabconnect.app | head -5
+# 5. When satisfied, promote to production (instant, zero-downtime)
+./promote.sh
 ```
 
-### Common Deployment Mistakes
+### Deploy Scripts Reference
 
-1. **Only running `npm run build`** - The Docker container has its own filesystem. Builds on the host don't affect it.
+| Script | Purpose |
+|--------|---------|
+| `deploy/setup-blue-green.sh` | One-time setup (converts old single-container to blue-green) |
+| `deploy/deploy.sh` | Deploy latest code to staging container |
+| `deploy/promote.sh` | Promote staging to production (zero-downtime) |
+| `deploy/status.sh` | Show current deployment status |
 
-2. **Forgetting `--network n8n-docker-caddy_default`** - Caddy uses container DNS names. Without the network, Caddy can't reach the container and returns 502.
+### How Blue-Green Works
 
-3. **Not pulling git changes first** - Docker builds from the local filesystem, not from git directly.
+1. **Two containers always available**: `colab-blue` and `colab-green`
+2. **One is production**, one is staging (tracked in `/opt/n8n-docker-caddy/caddy_config/active_color`)
+3. **deploy.sh** always deploys to the NON-production container
+4. **promote.sh** updates Caddy config and reloads (zero-downtime switch)
+5. **Instant rollback**: Just run `promote.sh` again to swap back
 
-4. **Container port confusion** - The Dockerfile uses port 3000 internally. We map external 5000 to internal 3000, but Caddy connects to port 3000 via Docker DNS.
-
-### Checking Deployment Status
+### Check Deployment Status
 
 ```bash
-# Check container is running
-docker ps | grep colab-connect
+# On server
+cd /root/CoLabConnect/deploy
+./status.sh
 
-# Check container logs
-docker logs colab-connect --tail 50
-
-# Check Caddy can reach it
-docker exec n8n-docker-caddy-caddy-1 wget -qO- http://colab-connect:3000 | head -5
-
-# Check from outside
-curl -sI https://colabconnect.app
+# Or manually
+docker ps | grep colab-       # See running containers
+cat /opt/n8n-docker-caddy/caddy_config/active_color  # Current production color
 ```
 
 ### Rollback
 
-```bash
-# If deployment fails, the old image might still exist
-docker images | grep colab-connect
+If something goes wrong after promoting:
 
-# Re-run previous image by tag (if you tagged it)
-docker run -d --name colab-connect -p 5000:3000 \
-  --network n8n-docker-caddy_default \
-  --env-file .env \
-  colab-connect:previous
+```bash
+# Instant rollback - just promote again (swaps back to previous)
+./promote.sh
 ```
+
+The old production container is still running as the new "staging", so rollback is instant.
+
+### One-Time Setup (Already Done)
+
+If you need to set up blue-green on a fresh server:
+
+```bash
+# Only run this ONCE when first setting up blue-green deployment
+cd /root/CoLabConnect/deploy
+./setup-blue-green.sh
+```
+
+This:
+1. Renames `colab-connect` to `colab-blue`
+2. Updates Caddyfile to reference `colab-blue`
+3. Adds staging subdomain configuration
+4. Creates tracking files
+
+### DNS Requirements
+
+Ensure these DNS records exist (both point to same IP):
+- `colabconnect.app` → `104.131.176.167`
+- `staging.colabconnect.app` → `104.131.176.167`
 
 ### Caddyfile Location
 
-The Caddy config is at `/opt/n8n-docker-caddy/caddy_config/Caddyfile`
+```
+/opt/n8n-docker-caddy/caddy_config/Caddyfile
+```
 
-```
-colabconnect.app {
-    reverse_proxy colab-connect:3000 {
-        header_up Host {host}
-        header_up X-Real-IP {remote}
-        header_up X-Forwarded-For {remote}
-        header_up X-Forwarded-Proto {scheme}
-    }
-    encode gzip
-    ...
-}
-```
+Managed automatically by `promote.sh`. Don't edit manually unless necessary.
 
 ## Testing Considerations
 

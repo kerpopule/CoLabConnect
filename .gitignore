@@ -7,6 +7,7 @@ vite.config.ts.*
 
 # Environment variables
 .env
+.env.*
 .env.local
 .env.*.local.local/
 supabase/.temp/
