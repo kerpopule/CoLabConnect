@@ -240,6 +240,7 @@ export async function notifyConnectionAccepted(
 }
 
 // Send notification for a new message in a followed chat room
+// "events" topic defaults to notifications enabled, other topics default to disabled
 export async function notifyFollowedChat(
   topicId: string,
   topicName: string,
@@ -247,46 +248,70 @@ export async function notifyFollowedChat(
   senderName: string,
   messagePreview: string
 ): Promise<void> {
-  // Get all users following this topic (except the sender)
-  const { data: followers, error } = await supabase
-    .from("topic_follows")
-    .select("user_id")
-    .eq("topic_id", topicId)
-    .neq("user_id", senderId);
+  // Get topic slug to determine default notification behavior
+  const { data: topicData } = await supabase
+    .from("topics")
+    .select("slug")
+    .eq("id", topicId)
+    .single();
 
-  if (error || !followers || followers.length === 0) {
+  const isEventsTopicSlug = topicData?.slug === 'events';
+
+  let usersToNotify: string[] = [];
+
+  if (isEventsTopicSlug) {
+    // For "events" topic: notify all users with push subscriptions EXCEPT those who explicitly disabled
+    // Get all users with push subscriptions (except sender)
+    const { data: allSubscriptions } = await supabase
+      .from("push_subscriptions")
+      .select("user_id")
+      .neq("user_id", senderId);
+
+    const allUserIds = [...new Set((allSubscriptions || []).map((s: { user_id: string }) => s.user_id))];
+
+    // Get topic settings to find users who explicitly disabled notifications
+    const { data: topicSettings } = await supabase
+      .from("topic_settings")
+      .select("user_id, notifications_enabled, muted")
+      .eq("topic_id", topicId)
+      .in("user_id", allUserIds);
+
+    // Filter out users who explicitly disabled notifications or muted the topic
+    const disabledUserIds = new Set(
+      (topicSettings || [])
+        .filter((s: { user_id: string; notifications_enabled: boolean | null; muted: boolean | null }) =>
+          s.notifications_enabled === false || s.muted === true
+        )
+        .map((s: { user_id: string }) => s.user_id)
+    );
+
+    usersToNotify = allUserIds.filter(userId => !disabledUserIds.has(userId));
+  } else {
+    // For other topics: only notify users who explicitly enabled notifications (via topic_settings)
+    const { data: enabledSettings } = await supabase
+      .from("topic_settings")
+      .select("user_id, notifications_enabled, muted")
+      .eq("topic_id", topicId)
+      .eq("notifications_enabled", true)
+      .neq("user_id", senderId);
+
+    usersToNotify = (enabledSettings || [])
+      .filter((s: { user_id: string; notifications_enabled: boolean | null; muted: boolean | null }) => !s.muted)
+      .map((s: { user_id: string }) => s.user_id);
+  }
+
+  // Filter out users currently viewing this topic
+  const notifiableUsers = usersToNotify.filter(
+    userId => !isUserViewing('topic', topicId, userId)
+  );
+
+  if (notifiableUsers.length === 0) {
     return;
   }
 
-  // Get topic mute settings for all followers
-  const followerIds = followers.map((f: { user_id: string }) => f.user_id);
-  const { data: topicMuteSettings } = await supabase
-    .from("topic_settings")
-    .select("user_id, muted")
-    .eq("topic_id", topicId)
-    .in("user_id", followerIds);
-
-  // Create a set of muted user IDs for fast lookup
-  const mutedUserIds = new Set(
-    (topicMuteSettings || [])
-      .filter((s: { user_id: string; muted: boolean }) => s.muted)
-      .map((s: { user_id: string }) => s.user_id)
-  );
-
-  // Filter out muted users AND users currently viewing this topic
-  const notifiableFollowers = followers.filter(
-    (f: { user_id: string }) =>
-      !mutedUserIds.has(f.user_id) &&
-      !isUserViewing('topic', topicId, f.user_id)
-  );
-
-  if (notifiableFollowers.length === 0) {
-    return;
-  }
-
-  // Send notifications to non-muted followers
-  const sendPromises = notifiableFollowers.map((follower: { user_id: string }) =>
-    sendPushNotification(follower.user_id, {
+  // Send notifications
+  const sendPromises = notifiableUsers.map(userId =>
+    sendPushNotification(userId, {
       title: `New message in #${topicName}`,
       body: `${senderName}: ${messagePreview.length > 80 ? messagePreview.slice(0, 77) + "..." : messagePreview}`,
       icon: "/icon-192.png",

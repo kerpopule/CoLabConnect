@@ -3696,6 +3696,37 @@ export default function Chat() {
   };
 
   const currentTopic = displayTopics.find((t) => t.id === activeTopic);
+
+  // Helper to determine if topic notifications are enabled based on default behavior
+  // "events" topic defaults to enabled, all other topics default to disabled
+  const isTopicNotificationsEnabled = (topicId: string | null): boolean => {
+    if (!topicId) return false;
+    const settings = topicSettings[topicId];
+    // If user has explicit setting, use that
+    if (settings?.notifications_enabled !== undefined) {
+      return settings.notifications_enabled;
+    }
+    // Otherwise, default based on topic slug
+    const topic = displayTopics.find(t => t.id === topicId);
+    // "events" topic defaults to enabled, all others default to disabled
+    return topic?.slug === 'events';
+  };
+
+  // Helper to determine if topic is muted by default
+  // "bugs-requests" topic defaults to muted, all other topics default to not muted
+  const isTopicMuted = (topicId: string | null): boolean => {
+    if (!topicId) return false;
+    const settings = topicSettings[topicId];
+    // If user has explicit setting, use that
+    if (settings?.muted !== undefined) {
+      return settings.muted;
+    }
+    // Otherwise, default based on topic slug
+    const topic = displayTopics.find(t => t.id === topicId);
+    // "bugs-requests" topic defaults to muted, all others default to not muted
+    return topic?.slug === 'bugs-requests';
+  };
+
   const isPrivateChat = activeTab === "dms" && !!activeDm && viewMode === "chat";
   const isGroupChat = activeTab === "groups" && !!activeGroup && viewMode === "chat";
   const isAiChat = activeTab === "ai";
@@ -4018,7 +4049,7 @@ export default function Chat() {
                     setShowTopicPrompt(true);
                   } else {
                     // Toggle notifications_enabled (and unmute if enabling while muted)
-                    const currentEnabled = topicSettings[activeTopic]?.notifications_enabled !== false;
+                    const currentEnabled = isTopicNotificationsEnabled(activeTopic);
                     handleToggleTopicNotifications(activeTopic, !currentEnabled);
                   }
                 }
@@ -4029,14 +4060,14 @@ export default function Chat() {
                   ? (isGroupNotificationsEnabled ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
                   : isPrivateChat
                   ? ((dmSettings[activeDm || ""]?.notifications_enabled !== false) ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
-                  : ((topicSettings[activeTopic || ""]?.notifications_enabled !== false) ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
+                  : (isTopicNotificationsEnabled(activeTopic) ? "bg-primary/10 text-primary border border-primary/30" : "bg-muted/50 text-muted-foreground border border-border")
               }`}
               title={
                 isGroupChat
                   ? (isGroupNotificationsEnabled ? "Disable push notifications" : "Enable push notifications")
                   : isPrivateChat
                   ? ((dmSettings[activeDm || ""]?.notifications_enabled !== false) ? "Disable push notifications" : "Enable push notifications")
-                  : ((topicSettings[activeTopic || ""]?.notifications_enabled !== false) ? "Disable push notifications" : "Enable push notifications")
+                  : (isTopicNotificationsEnabled(activeTopic) ? "Disable push notifications" : "Enable push notifications")
               }
             >
               {followLoading ? (
@@ -4046,7 +4077,7 @@ export default function Chat() {
               ) : isPrivateChat ? (
                 (dmSettings[activeDm || ""]?.notifications_enabled !== false) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
               ) : (
-                (topicSettings[activeTopic || ""]?.notifications_enabled !== false) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
+                isTopicNotificationsEnabled(activeTopic) ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />
               )}
             </button>
           )}
@@ -4172,8 +4203,8 @@ export default function Chat() {
                   id: t.id,
                   emoji: t.icon || "💬",
                   name: t.name,
-                  unreadCount: topicSettings[t.id]?.muted ? 0 : (topicUnreadCounts?.[t.id] || 0),
-                  isMuted: topicSettings[t.id]?.muted || false,
+                  unreadCount: isTopicMuted(t.id) ? 0 : (topicUnreadCounts?.[t.id] || 0),
+                  isMuted: isTopicMuted(t.id),
                   displayOrder: t.display_order,
                 }))}
                 onSelect={isReorderingTopics ? () => {} : handleSelectTopic}
@@ -5289,11 +5320,11 @@ export default function Chat() {
               )}
               {contextMenu.type === "topic" && (
                 <button
-                  onClick={() => handleMuteTopic(contextMenu.id, !topicSettings[contextMenu.id]?.muted)}
+                  onClick={() => handleMuteTopic(contextMenu.id, !isTopicMuted(contextMenu.id))}
                   className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-muted hover:bg-muted/80 transition-colors text-foreground"
                 >
-                  {topicSettings[contextMenu.id]?.muted ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
-                  {topicSettings[contextMenu.id]?.muted ? "Unmute Topic" : "Mute Topic"}
+                  {isTopicMuted(contextMenu.id) ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+                  {isTopicMuted(contextMenu.id) ? "Unmute Topic" : "Mute Topic"}
                 </button>
               )}
             </div>
