@@ -1,9 +1,20 @@
 #!/bin/bash
 # Deploy to staging environment (does NOT affect production)
+#
+# Usage:
+#   ./deploy.sh              # Normal deploy (uses production Supabase - same data)
+#   ./deploy.sh --isolated   # Schema testing (uses isolated staging Supabase)
+#
 set -e
 
 CADDY_CONFIG="/opt/n8n-docker-caddy/caddy_config"
 PROJECT_DIR="/root/CoLabConnect"
+USE_ISOLATED=false
+
+# Check for --isolated flag
+if [ "$1" = "--isolated" ]; then
+    USE_ISOLATED=true
+fi
 
 # Determine current production color
 if [ -f "$CADDY_CONFIG/active_color" ]; then
@@ -31,9 +42,15 @@ cd "$PROJECT_DIR"
 echo "Pulling latest code..."
 git pull
 
-# Load staging environment variables (isolated Supabase database)
-echo "Loading staging environment..."
-source .env.staging
+# Load environment variables
+if [ "$USE_ISOLATED" = true ]; then
+    echo "Loading ISOLATED staging environment (separate Supabase database)..."
+    echo "⚠️  Using isolated database - for schema/migration testing only"
+    source .env.staging-isolated
+else
+    echo "Loading staging environment (production Supabase - real data)..."
+    source .env.staging
+fi
 
 # Build new image
 echo ""
@@ -51,11 +68,17 @@ docker stop colab-$STAGING 2>/dev/null || true
 docker rm colab-$STAGING 2>/dev/null || true
 
 # Start new staging container
+if [ "$USE_ISOLATED" = true ]; then
+    ENV_FILE=".env.staging-isolated"
+else
+    ENV_FILE=".env.staging"
+fi
+
 docker run -d \
   --name colab-$STAGING \
   --network n8n-docker-caddy_default \
   --restart unless-stopped \
-  --env-file .env \
+  --env-file $ENV_FILE \
   colab-connect:$STAGING
 
 # Wait for container to start

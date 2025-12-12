@@ -278,14 +278,30 @@ className="rounded-full focus:ring-2 focus:ring-primary/20"
 - **Region**: West US (Oregon)
 - **Env file**: `.env`
 
-### Staging
-- **URL**: `https://aktexrswaugzdmisxoun.supabase.co`
-- **Project**: CoLab Connect Staging
-- **Region**: us-west-1
-- **Env file**: `.env.staging`
-- **Dashboard**: https://supabase.com/dashboard/project/aktexrswaugzdmisxoun
+### Staging (Two Modes)
 
-**Important**: Staging uses a completely separate Supabase database. Schema changes tested in staging do NOT affect production. Both share the same Google OAuth client ID.
+**Default Mode** - Uses production Supabase (same data):
+- **Env file**: `.env.staging`
+- **Deploy**: `./deploy.sh`
+- **Use for**: Code changes, UI fixes, new features, bug fixes
+- Tests with real groups, DMs, connections, profiles
+
+**Isolated Mode** - Uses separate Supabase (empty database):
+- **URL**: `https://aktexrswaugzdmisxoun.supabase.co`
+- **Env file**: `.env.staging-isolated`
+- **Deploy**: `./deploy.sh --isolated`
+- **Dashboard**: https://supabase.com/dashboard/project/aktexrswaugzdmisxoun
+- **Use for**: Schema changes, migrations, destructive testing
+
+### When to Use Isolated Mode
+
+Use `./deploy.sh --isolated` ONLY when:
+1. Testing database schema changes (new tables, columns, indexes)
+2. Testing migrations before applying to production
+3. Testing destructive operations that could corrupt data
+4. Need a clean slate without real user data
+
+For everything else (99% of deploys), use the default `./deploy.sh` which gives you real data to test with.
 
 ## Design System
 
@@ -304,7 +320,8 @@ The production server runs on DigitalOcean with **blue-green deployment** for ze
 - **Caddy** (reverse proxy in Docker) handles HTTPS/SSL
 - **Two containers**: `colab-blue` and `colab-green` (one is production, one is staging)
 - **Zero-downtime switching**: Caddy restart swaps which container serves production
-- **Separate Supabase databases**: Production and staging use different Supabase projects for complete isolation
+- **Same database by default**: Staging uses production Supabase for realistic testing with real data
+- **Isolated mode available**: Use `--isolated` flag for schema changes
 
 ```
 Internet → Caddy (ports 80/443) → Docker network
@@ -352,8 +369,9 @@ cd /root/CoLabConnect/deploy
 
 | Script | Purpose |
 |--------|---------|
-| `deploy/setup-blue-green.sh` | One-time setup (converts old single-container to blue-green) |
-| `deploy/deploy.sh` | Deploy latest code to staging container |
+| `deploy/setup-blue-green.sh` | One-time setup (already done) |
+| `deploy/deploy.sh` | Deploy to staging (uses production database) |
+| `deploy/deploy.sh --isolated` | Deploy to staging with isolated database (for schema changes) |
 | `deploy/promote.sh` | Promote staging to production (zero-downtime) |
 | `deploy/status.sh` | Show current deployment status |
 
