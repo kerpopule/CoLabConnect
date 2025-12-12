@@ -3713,7 +3713,7 @@ export default function Chat() {
   };
 
   // Helper to determine if topic is muted by default
-  // "bugs-requests" topic defaults to muted, all other topics default to not muted
+  // "bugs" and "requests" topics default to muted, all other topics default to not muted
   const isTopicMuted = (topicId: string | null): boolean => {
     if (!topicId) return false;
     const settings = topicSettings[topicId];
@@ -3723,8 +3723,9 @@ export default function Chat() {
     }
     // Otherwise, default based on topic slug
     const topic = displayTopics.find(t => t.id === topicId);
-    // "bugs-requests" topic defaults to muted, all others default to not muted
-    return topic?.slug === 'bugs-requests';
+    const slug = topic?.slug || '';
+    // "bugs" and "requests" topics default to muted
+    return slug === 'bugs' || slug === 'requests' || slug === 'bugs-requests';
   };
 
   const isPrivateChat = activeTab === "dms" && !!activeDm && viewMode === "chat";

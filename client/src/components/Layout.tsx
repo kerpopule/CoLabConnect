@@ -248,14 +248,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
         topicMuteMap[ts.topic_id] = ts.muted;
       }
 
-      // Helper to check if topic is muted (explicit setting or default for bugs-requests)
+      // Helper to check if topic is muted (explicit setting or default for bugs/requests)
       const isTopicMuted = (topicId: string, slug: string | null): boolean => {
         // If user has explicit setting, use that
         if (topicMuteMap[topicId] !== undefined && topicMuteMap[topicId] !== null) {
           return topicMuteMap[topicId] as boolean;
         }
-        // Otherwise, "bugs-requests" is muted by default
-        return slug === 'bugs-requests';
+        // Otherwise, "bugs" and "requests" topics are muted by default
+        return slug === 'bugs' || slug === 'requests' || slug === 'bugs-requests';
       };
 
       let totalUnread = 0;
