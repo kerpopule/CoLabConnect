@@ -270,10 +270,22 @@ className="rounded-full focus:ring-2 focus:ring-primary/20"
 
 5. **Push notifications**: Require HTTPS in production. VAPID keys generated once and reused.
 
-## Supabase Project
+## Supabase Projects
 
+### Production
 - **URL**: `https://oyneqfcajnioyipoixix.supabase.co`
-- **Region**: us-east-1
+- **Project**: Co:Lab Connect
+- **Region**: West US (Oregon)
+- **Env file**: `.env`
+
+### Staging
+- **URL**: `https://aktexrswaugzdmisxoun.supabase.co`
+- **Project**: CoLab Connect Staging
+- **Region**: us-west-1
+- **Env file**: `.env.staging`
+- **Dashboard**: https://supabase.com/dashboard/project/aktexrswaugzdmisxoun
+
+**Important**: Staging uses a completely separate Supabase database. Schema changes tested in staging do NOT affect production. Both share the same Google OAuth client ID.
 
 ## Design System
 
@@ -291,8 +303,8 @@ The production server runs on DigitalOcean with **blue-green deployment** for ze
 
 - **Caddy** (reverse proxy in Docker) handles HTTPS/SSL
 - **Two containers**: `colab-blue` and `colab-green` (one is production, one is staging)
-- **Zero-downtime switching**: Caddy reload swaps which container serves production
-- **Same Supabase backend**: Both containers connect to the same database/auth
+- **Zero-downtime switching**: Caddy restart swaps which container serves production
+- **Separate Supabase databases**: Production and staging use different Supabase projects for complete isolation
 
 ```
 Internet → Caddy (ports 80/443) → Docker network
