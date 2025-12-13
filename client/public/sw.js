@@ -1,7 +1,7 @@
 // Co:Lab Connect Service Worker for Push Notifications
-// Version 79 - Fix PWA opening from push notifications on iOS
+// Version 78 - Fix profile variable reference in group invite handlers
 
-const CACHE_VERSION = 79;
+const CACHE_VERSION = 78;
 const CACHE_NAME = `colab-connect-v${CACHE_VERSION}`;
 
 // Install event - immediately take over from old service worker
@@ -98,55 +98,41 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const data = event.notification.data || {};
-  let path = '/';
+  let url = '/';
 
   // Navigate based on notification data - prefer explicit url if provided
   if (data.url) {
-    path = data.url;
+    url = data.url;
   } else if (data.type === 'dm') {
-    path = `/chat?dm=${data.senderId}`;
+    url = `/chat?dm=${data.senderId}`;
   } else if (data.type === 'connection') {
-    path = `/connections?tab=requests`;
+    url = `/connections?tab=requests`;
   } else if (data.type === 'chat') {
-    path = `/chat`;
+    url = `/chat`;
   } else if (data.type === 'mention') {
-    path = `/chat`;
+    url = `/chat`;
   } else if (data.type === 'profile') {
-    path = `/profile/edit`;
+    url = `/profile/edit`;
   } else if (data.type === 'group_invite') {
-    path = `/chat?tab=groups`;
+    url = `/chat?tab=groups`;
   } else if (data.type === 'group_message') {
-    path = `/chat?group=${data.groupId}`;
+    url = `/chat?group=${data.groupId}`;
   }
-
-  // Build full URL to ensure PWA opens instead of browser
-  // Use the service worker's scope origin (e.g., https://colabconnect.app)
-  const origin = self.location.origin;
-  const fullUrl = path.startsWith('http') ? path : origin + path;
-
-  console.log('[SW] Opening URL:', fullUrl);
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      console.log('[SW] Found clients:', clientList.length);
-
-      // First, try to find a PWA window (standalone display mode)
-      // These have URLs matching our origin
+      // If app is already open, focus it and navigate
       for (const client of clientList) {
-        const clientUrl = new URL(client.url);
-        if (clientUrl.origin === origin) {
-          console.log('[SW] Found matching PWA client, focusing and navigating');
-          // Post message to navigate first, then focus
-          client.postMessage({ type: 'NAVIGATE', url: path });
-          return client.focus();
+        if ('focus' in client) {
+          client.focus();
+          // Post message to navigate (app will handle via useEffect)
+          client.postMessage({ type: 'NAVIGATE', url });
+          return;
         }
       }
-
-      // No existing PWA window found, open a new one with full URL
-      // Using full URL helps iOS recognize this should open in the PWA
-      console.log('[SW] No PWA client found, opening new window');
+      // Otherwise, open a new window directly to the URL
       if (clients.openWindow) {
-        return clients.openWindow(fullUrl);
+        return clients.openWindow(url);
       }
     })
   );
